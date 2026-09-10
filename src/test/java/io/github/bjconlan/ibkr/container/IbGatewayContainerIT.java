@@ -3,7 +3,11 @@ package io.github.bjconlan.ibkr.container;
 import io.github.bjconlan.ibkr.TwsClient;
 import io.github.bjconlan.ibkr.TwsConfig;
 import io.github.bjconlan.ibkr.event.IbEvent;
-import io.github.bjconlan.ibkr.model.Contract;
+import io.github.bjconlan.ibkr.proto.ContractDataEndProto;
+import io.github.bjconlan.ibkr.proto.ContractDataProto;
+import io.github.bjconlan.ibkr.proto.ContractProto;
+import io.github.bjconlan.ibkr.proto.CurrentTimeProto;
+import io.github.bjconlan.ibkr.proto.ManagedAccountsProto;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -12,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.DockerClientFactory;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,7 +26,6 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -71,35 +75,38 @@ class IbGatewayContainerIT {
             assertEquals(226, client.serverVersion());
 
             client.reqCurrentTime();
-            client.reqContractDetails(1, Contract.stock("AAPL"));
+            client.reqContractDetails(1, contract("AAPL"));
 
-            Map<Class<? extends IbEvent>, IbEvent> found = awaitAll(events, Duration.ofSeconds(30),
-                    IbEvent.ManagedAccounts.class,
-                    IbEvent.CurrentTime.class,
-                    IbEvent.ContractDetailsReceived.class,
-                    IbEvent.ContractDetailsEnd.class);
+            Map<Class<? extends com.google.protobuf.Message>, Object> found = awaitAll(events, Duration.ofSeconds(30),
+                    ManagedAccountsProto.ManagedAccounts.class,
+                    CurrentTimeProto.CurrentTime.class,
+                    ContractDataProto.ContractData.class,
+                    ContractDataEndProto.ContractDataEnd.class);
 
-            @SuppressWarnings("unchecked")
-            var accounts = (IbEvent.ManagedAccounts) found.get(IbEvent.ManagedAccounts.class);
-            assertFalse(accounts.accounts().isEmpty());
+            var accounts = (ManagedAccountsProto.ManagedAccounts) found.get(ManagedAccountsProto.ManagedAccounts.class);
+            assertFalse(accounts.getAccountsList().isBlank());
 
-            var currentTime = (IbEvent.CurrentTime) found.get(IbEvent.CurrentTime.class);
-            assertTrue(currentTime.epochSeconds() > 0);
+            var currentTime = (CurrentTimeProto.CurrentTime) found.get(CurrentTimeProto.CurrentTime.class);
+            assertTrue(currentTime.getCurrentTime() > 0);
 
-            var details = (IbEvent.ContractDetailsReceived) found.get(IbEvent.ContractDetailsReceived.class);
-            assertNotNull(details.details().contract());
-            assertEquals("AAPL", details.details().contract().symbol());
+            var data = (ContractDataProto.ContractData) found.get(ContractDataProto.ContractData.class);
+            assertEquals("AAPL", data.getContract().getSymbol());
         }
     }
 
-    /** Collects matching events until every wanted type has been seen, or the timeout elapses. */
+    private static ContractProto.Contract contract(String symbol) {
+        return ContractProto.Contract.newBuilder()
+                .setSymbol(symbol).setSecType("STK").setExchange("SMART").setCurrency("USD")
+                .build();
+    }
+
+    /** Collects matching payloads until every wanted type has been seen, or the timeout elapses. */
     @SafeVarargs
-    private static Map<Class<? extends IbEvent>, IbEvent> awaitAll(BlockingQueue<IbEvent> events,
-                                                                   Duration timeout,
-                                                                   Class<? extends IbEvent>... wanted)
-            throws InterruptedException {
-        List<Class<? extends IbEvent>> remaining = new java.util.ArrayList<>(List.of(wanted));
-        Map<Class<? extends IbEvent>, IbEvent> found = new HashMap<>();
+    private static Map<Class<? extends com.google.protobuf.Message>, Object> awaitAll(
+            BlockingQueue<IbEvent> events, Duration timeout,
+            Class<? extends com.google.protobuf.Message>... wanted) throws InterruptedException {
+        List<Class<? extends com.google.protobuf.Message>> remaining = new ArrayList<>(List.of(wanted));
+        Map<Class<? extends com.google.protobuf.Message>, Object> found = new HashMap<>();
         long deadline = System.nanoTime() + timeout.toNanos();
 
         while (!remaining.isEmpty() && System.nanoTime() < deadline) {
@@ -107,10 +114,12 @@ class IbGatewayContainerIT {
             if (event == null) {
                 break;
             }
-            for (Class<? extends IbEvent> type : List.copyOf(remaining)) {
-                if (type.isInstance(event)) {
-                    found.put(type, event);
-                    remaining.remove(type);
+            if (event instanceof IbEvent.Message m) {
+                for (Class<? extends com.google.protobuf.Message> type : List.copyOf(remaining)) {
+                    if (type.isInstance(m.payload())) {
+                        found.put(type, m.payload());
+                        remaining.remove(type);
+                    }
                 }
             }
         }

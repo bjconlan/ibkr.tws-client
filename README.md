@@ -6,9 +6,9 @@ This is not a drop-in replacement for IBKR's `com.ib.client` package. It is a
 smaller, opinionated rewrite of the parts most programs actually use, built
 around three ideas:
 
-- **Callbacks are data.** Server messages are a sealed `IbEvent` hierarchy, so
-  handlers use pattern-matching `switch` instead of implementing a 300-method
-  `EWrapper`.
+- **Callbacks are data.** Server messages are a sealed `IbEvent` hierarchy carrying the
+  generated protobuf payloads, so handlers use pattern-matching `switch` instead of
+  implementing a 300-method `EWrapper`, and no field is remapped into a parallel type.
 - **Blocking is cheap.** The socket reader, writer and event dispatcher each run
   on a virtual thread, so a slow handler cannot stall the wire.
 - **Pacing is declared, not improvised.** IBKR's documented request limits are
@@ -84,27 +84,28 @@ Notes:
   version would still speak the same ids for the implemented messages, but the negotiation cap
   should be raised (`Wire.MAX_VERSION`) and the client re-tested.
 - **All 200** upstream proto files are vendored under `proto/`, re-homed to
-  `io.github.bjconlan.ibkr.proto`; field numbers and types are untouched. Only the subset that
-  backs the currently wired messages is referenced from code; the rest compile but are idle
-  until a feature uses them. Re-vendor from the same 10.50.02 release when upgrading.
+  `io.github.bjconlan.ibkr.proto`; field numbers and types are untouched. Every inbound
+  message with a protobuf variant is decodable and every outbound id is sendable.
+  Re-vendor from the same 10.50.02 release when upgrading.
 - Protobuf is required. TWS/Gateway releases old enough to report server version `< 201` use the
   legacy text framing and are not supported.
 
-## What is implemented
+## Message coverage
 
-| Area | Requests | Events |
-|------|----------|--------|
-| Session | `startApi`, `reqIds`, `reqCurrentTime` | `Connected`, `ManagedAccounts`, `NextValidId`, `CurrentTime`, `Disconnected`, `Error` |
-| Contracts | `reqContractDetails`, `cancelContractDetails` | `ContractDetailsReceived`, `ContractDetailsEnd` |
-| Market data | `reqMktData`, `cancelMktData`, `setMarketDataType` | `Tick.Price`, `Tick.Size`, `Tick.Generic`, `Tick.Text`, `Tick.OptionComputation`, `Tick.RequestParams`, `Tick.SnapshotEnd`, `MarketDataType` |
-| Historical | `reqHistoricalData`, `cancelHistoricalData` | `HistoricalBar`, `HistoricalDataEnd` |
-| Orders | `placeOrder`, `cancelOrder`, `reqOpenOrders` | `OrderStatus`, `OpenOrder`, `OpenOrdersEnd` |
-| Account | `reqAccountUpdates`, `reqPositions`, `cancelPositions`, `reqExecutions` | `AccountValueUpdate`, `PortfolioValueUpdate`, `AccountDownloadEnd`, `PositionUpdate`, `PositionsEnd`, `ExecutionDetails`, `ExecutionsEnd`, `CommissionReportReceived` |
+All 80 inbound messages that have a protobuf variant are decoded, and all 83 outbound ids can
+be sent, so the wire surface is at parity with the upstream API:
 
-Only part of the upstream API is wired so far. The remaining areas (scanners, news, PnL,
-market depth, tick-by-tick, WSH, FA, and so on) are being brought up to parity. Adding a
-message means adding one `IncomingId`/`OutgoingId` constant and one branch in
-`Decoder`/`Encoder` — the compiler enforces that the decoder switch stays exhaustive.
+- **Receiving** — every server message arrives as `IbEvent.Message` carrying its generated
+  protobuf class. The decoder switch over `IncomingId` is exhaustive, so a new id cannot be
+  added without a parser.
+- **Sending** — `client.send(OutgoingId, message)` frames and paces any request. The typed
+  methods on `TwsClient` (`reqMktData`, `reqHistoricalData`, `placeOrder`, ...) are
+  conveniences over the same path.
+
+The five upstream ids with no protobuf variant (`END_CONN`, `TICK_EFP`,
+`DELTA_NEUTRAL_VALIDATION`, `VERIFY_AND_AUTH_MESSAGE_API`, `VERIFY_AND_AUTH_COMPLETED`) exist
+only in the legacy text framing and are not part of a protobuf-only client. Connection end
+arrives as `IbEvent.Disconnected`, and the delta-neutral contract is a field of `Contract`.
 
 ## Sample
 
@@ -123,11 +124,13 @@ public final class MarketDataDemo {
 
     public static void main(String[] args) throws Exception {
         TwsConfig config = TwsConfig.defaults(1).withPort(4002);   // paper gateway
+        ContractProto.Contract aapl = ContractProto.Contract.newBuilder()
+                .setSymbol("AAPL").setSecType("STK").setExchange("SMART").setCurrency("USD").build();
+
         try (TwsClient client = new TwsClient(config, MarketDataDemo::render)) {
             client.connect();
-            client.reqMktData(1, Contract.stock("AAPL"), "", false, false);
-            client.reqHistoricalData(2, Contract.stock("AAPL"), "",
-                    "1 D", "5 mins", true, "TRADES", 1, false);
+            client.reqMktData(1, aapl, "", false, false);
+            client.reqHistoricalData(2, aapl, "", "1 D", "5 mins", true, "TRADES", 1, false);
 
             Thread.sleep(30_000);   // events arrive on the dispatcher thread
             client.cancelMktData(1);
@@ -136,11 +139,10 @@ public final class MarketDataDemo {
 
     private static void render(IbEvent event) {
         switch (event) {
-            case IbEvent.Tick.Price p -> System.out.printf("price %.4f%n", p.price());
-            case IbEvent.Tick.Size s  -> System.out.printf("size %s%n", s.size());
-            case IbEvent.HistoricalBar b -> System.out.printf("%s %.2f%n", b.bar().date(), b.bar().close());
-            case IbEvent.HistoricalDataEnd e -> System.out.println("history done");
-            case IbEvent.OrderStatus o -> System.out.printf("order %d: %s%n", o.status().orderId(), o.status().status());
+            case IbEvent.Message m when m.payload() instanceof TickPriceProto.TickPrice p ->
+                    System.out.printf("price %.4f%n", p.getPrice());
+            case IbEvent.Message m when m.payload() instanceof HistoricalDataProto.HistoricalData h ->
+                    h.getHistoricalDataBarsList().forEach(b -> System.out.printf("%s %.2f%n", b.getDate(), b.getClose()));
             case IbEvent.Error e -> System.err.printf("[%d] %d: %s%n", e.requestId(), e.code(), e.message());
             case IbEvent.Disconnected d -> System.out.println("disconnected: " + d.reason());
             default -> { }
@@ -181,9 +183,8 @@ try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 io.github.bjconlan.ibkr
 ├── TwsClient          facade; request methods, request-id allocation, lease bookkeeping
 ├── TwsConfig          connection and retry settings
-├── event/IbEvent      sealed hierarchy of everything the server can send
-├── model/             records: Contract, Order, Bar, Position, ...
-├── protocol/          framing (Wire), request encoding, response decoding, proto mapping
+├── event/IbEvent      sealed hierarchy: lifecycle records + Message(id, protobuf payload)
+├── protocol/          framing (Wire), request encoding, message decoding, id maps
 ├── pacing/            RequestType, PacingRule(s), Pacer
 └── transport/         socket + virtual-thread reader/writer/dispatcher
 ```
@@ -236,14 +237,13 @@ touching the protocol code.
 - **Protobuf only.** Servers older than version 201 are rejected. Legacy
   text-framed messages are not decoded; the upstream client spends most of its
   size on that path.
-- **Narrow surface.** The request/event set above is what is implemented. It is
-  chosen to be a working foundation, not API parity.
+- **No per-message records.** Payloads are the generated protobuf classes. Handlers get
+  `getX()`/`hasX()` accessors rather than record deconstruction, and a pattern `switch` over
+  payload types needs a `default` because generated classes are not sealed. Dispatch on
+  `IbEvent.Message.id()` (an enum switch) if you want exhaustiveness.
 - **No automatic reconnect loop.** `connect()` retries the initial handshake, but
   a dropped connection emits `Disconnected` and stops. Reconnection policy is left
   to the caller, who may want to re-subscribe explicitly.
-- **Field-level lossiness.** The `model` records carry the commonly used fields.
-  Rare fields present on the wire are ignored by the mapper rather than surfaced
-  as half-typed objects.
 - **Pacing values are conservative defaults.** They are the documented ceilings
   minus headroom; adjust `PacingRules.defaults()` to your account's entitlements.
 

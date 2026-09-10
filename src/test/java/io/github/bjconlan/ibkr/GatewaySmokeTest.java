@@ -1,7 +1,14 @@
 package io.github.bjconlan.ibkr;
 
 import io.github.bjconlan.ibkr.event.IbEvent;
-import io.github.bjconlan.ibkr.model.Contract;
+import io.github.bjconlan.ibkr.proto.ContractDataEndProto;
+import io.github.bjconlan.ibkr.proto.ContractDataProto;
+import io.github.bjconlan.ibkr.proto.ContractProto;
+import io.github.bjconlan.ibkr.proto.CurrentTimeProto;
+import io.github.bjconlan.ibkr.proto.ErrorMessageProto;
+import io.github.bjconlan.ibkr.proto.TickPriceProto;
+import io.github.bjconlan.ibkr.proto.TickSizeProto;
+import io.github.bjconlan.ibkr.proto.TickSnapshotEndProto;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
@@ -11,7 +18,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -49,62 +55,83 @@ class GatewaySmokeTest {
             System.out.println("connected to gateway, server version " + client.serverVersion());
 
             client.reqCurrentTime();
-            client.reqContractDetails(1, Contract.stock("AAPL"));
+            client.reqContractDetails(1, contract("AAPL"));
 
-            IbEvent.CurrentTime currentTime = await(events, IbEvent.CurrentTime.class);
-            assertTrue(currentTime.epochSeconds() > 0);
+            CurrentTimeProto.CurrentTime currentTime = await(events, CurrentTimeProto.CurrentTime.class);
+            assertTrue(currentTime.getCurrentTime() > 0);
 
-            IbEvent.ContractDetailsReceived details = await(events, IbEvent.ContractDetailsReceived.class);
-            assertNotNull(details.details().contract());
-            System.out.printf("resolved: %s %s (%s) via %s, minTick=%s%n",
-                    details.details().contract().symbol(),
-                    details.details().contract().secType(),
-                    details.details().longName(),
-                    details.details().contract().exchange(),
-                    details.details().minTick());
-            assertEquals("AAPL", details.details().contract().symbol());
+            ContractDataProto.ContractData data = await(events, ContractDataProto.ContractData.class);
+            ContractProto.Contract contract = data.getContract();
+            System.out.printf("resolved: %s %s (%s) via %s%n",
+                    contract.getSymbol(), contract.getSecType(),
+                    data.getContractDetails().getLongName(), contract.getExchange());
+            assertEquals("AAPL", contract.getSymbol());
 
-            assertNotNull(await(events, IbEvent.ContractDetailsEnd.class));
+            await(events, ContractDataEndProto.ContractDataEnd.class);
 
             // Market data is account-entitlement dependent; log it but do not fail if denied.
             client.setMarketDataType(3); // delayed
-            client.reqMktData(2, Contract.stock("AAPL"), "", true, false);
+            client.reqMktData(2, contract("AAPL"), "", true, false);
             IbEvent tick = awaitAny(events, Duration.ofSeconds(10),
-                    IbEvent.Tick.Price.class, IbEvent.Tick.Size.class, IbEvent.Tick.SnapshotEnd.class,
-                    IbEvent.Error.class);
+                    TickPriceProto.TickPrice.class, TickSizeProto.TickSize.class,
+                    TickSnapshotEndProto.TickSnapshotEnd.class, ErrorMessageProto.ErrorMessage.class);
             System.out.println("market data result: " + describe(tick));
         }
     }
 
-    private static <T extends IbEvent> T await(BlockingQueue<IbEvent> events, Class<T> type) throws InterruptedException {
-        return type.cast(awaitAny(events, Duration.ofSeconds(30), type));
+    private static <T extends com.google.protobuf.Message> T await(BlockingQueue<IbEvent> events,
+                                                                   Class<T> payloadType) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (System.nanoTime() < deadline) {
+            IbEvent event = events.poll(30, TimeUnit.SECONDS);
+            if (event instanceof IbEvent.Message m && payloadType.isInstance(m.payload())) {
+                return payloadType.cast(m.payload());
+            }
+            if (event != null) {
+                System.out.println("(ignoring) " + describe(event));
+            }
+        }
+        throw new AssertionError("did not receive " + payloadType.getSimpleName());
     }
 
     @SafeVarargs
     private static IbEvent awaitAny(BlockingQueue<IbEvent> events, Duration timeout,
-                                    Class<? extends IbEvent>... types) throws InterruptedException {
+                                    Class<? extends com.google.protobuf.Message>... payloadTypes) throws InterruptedException {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (System.nanoTime() < deadline) {
             IbEvent event = events.poll(deadline - System.nanoTime(), TimeUnit.NANOSECONDS);
             if (event == null) {
                 break;
             }
-            for (Class<? extends IbEvent> type : types) {
-                if (type.isInstance(event)) {
-                    return event;
+            if (event instanceof IbEvent.Message m) {
+                for (Class<? extends com.google.protobuf.Message> type : payloadTypes) {
+                    if (type.isInstance(m.payload())) {
+                        return event;
+                    }
                 }
             }
             System.out.println("(ignoring) " + describe(event));
         }
-        throw new AssertionError("did not receive any of " + java.util.Arrays.toString(types));
+        throw new AssertionError("did not receive any of " + java.util.Arrays.toString(payloadTypes));
+    }
+
+    private static ContractProto.Contract contract(String symbol) {
+        return ContractProto.Contract.newBuilder()
+                .setSymbol(symbol).setSecType("STK").setExchange("SMART").setCurrency("USD")
+                .build();
     }
 
     private static String describe(IbEvent event) {
         return switch (event) {
             case IbEvent.Error e -> "Error[%d] %d: %s".formatted(e.requestId(), e.code(), e.message());
-            case IbEvent.Tick.Price p -> "Price[%d] %.4f".formatted(p.requestId(), p.price());
-            case IbEvent.Tick.Size s -> "Size[%d] %s".formatted(s.requestId(), s.size());
-            case IbEvent.Tick.SnapshotEnd s -> "SnapshotEnd[%d]".formatted(s.requestId());
+            case IbEvent.Message m when m.payload() instanceof ErrorMessageProto.ErrorMessage e ->
+                    "Error[%d] %d: %s".formatted(e.getId(), e.getErrorCode(), e.getErrorMsg());
+            case IbEvent.Message m when m.payload() instanceof TickPriceProto.TickPrice p ->
+                    "Price[%d] %.4f".formatted(p.getReqId(), p.getPrice());
+            case IbEvent.Message m when m.payload() instanceof TickSizeProto.TickSize s ->
+                    "Size[%d] %s".formatted(s.getReqId(), s.getSize());
+            case IbEvent.Message m when m.payload() instanceof TickSnapshotEndProto.TickSnapshotEnd s ->
+                    "SnapshotEnd[%d]".formatted(s.getReqId());
             default -> event.toString();
         };
     }

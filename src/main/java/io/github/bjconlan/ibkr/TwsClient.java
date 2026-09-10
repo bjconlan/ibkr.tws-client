@@ -1,12 +1,32 @@
 package io.github.bjconlan.ibkr;
 
+import com.google.protobuf.MessageLite;
 import io.github.bjconlan.ibkr.event.IbEvent;
-import io.github.bjconlan.ibkr.model.Contract;
-import io.github.bjconlan.ibkr.model.ExecutionFilter;
-import io.github.bjconlan.ibkr.model.Order;
 import io.github.bjconlan.ibkr.pacing.Pacer;
 import io.github.bjconlan.ibkr.pacing.RequestType;
 import io.github.bjconlan.ibkr.protocol.Encoder;
+import io.github.bjconlan.ibkr.protocol.OutgoingId;
+import io.github.bjconlan.ibkr.proto.AccountDataRequestProto;
+import io.github.bjconlan.ibkr.proto.CancelContractDataProto;
+import io.github.bjconlan.ibkr.proto.CancelHistoricalDataProto;
+import io.github.bjconlan.ibkr.proto.CancelMarketDataProto;
+import io.github.bjconlan.ibkr.proto.CancelOrderRequestProto;
+import io.github.bjconlan.ibkr.proto.CancelPositionsProto;
+import io.github.bjconlan.ibkr.proto.ContractDataRequestProto;
+import io.github.bjconlan.ibkr.proto.ContractProto;
+import io.github.bjconlan.ibkr.proto.CurrentTimeRequestProto;
+import io.github.bjconlan.ibkr.proto.ExecutionFilterProto;
+import io.github.bjconlan.ibkr.proto.ExecutionRequestProto;
+import io.github.bjconlan.ibkr.proto.HistoricalDataRequestProto;
+import io.github.bjconlan.ibkr.proto.IdsRequestProto;
+import io.github.bjconlan.ibkr.proto.MarketDataRequestProto;
+import io.github.bjconlan.ibkr.proto.MarketDataTypeRequestProto;
+import io.github.bjconlan.ibkr.proto.OpenOrdersRequestProto;
+import io.github.bjconlan.ibkr.proto.OrderProto;
+import io.github.bjconlan.ibkr.proto.PlaceOrderRequestProto;
+import io.github.bjconlan.ibkr.proto.PositionsRequestProto;
+import io.github.bjconlan.ibkr.proto.StartApiRequestProto;
+import io.github.bjconlan.ibkr.proto.TickSnapshotEndProto;
 import io.github.bjconlan.ibkr.transport.EventHandler;
 import io.github.bjconlan.ibkr.transport.Transport;
 import io.github.resilience4j.core.IntervalFunction;
@@ -22,9 +42,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * A minimal, thread-safe TWS API client.
  *
- * <p>Request methods are synchronous: they may block on the {@link Pacer} until it is safe to send
- * (virtual threads make this cheap), then hand the frame to the transport. Server messages arrive
- * as {@link IbEvent}s on the {@link EventHandler} passed to the constructor, in order.
+ * <p>{@link #send(OutgoingId, MessageLite)} frames and paces any request the protocol defines;
+ * the typed methods below are conveniences that build the common messages. Request methods
+ * are synchronous: they may block on the {@link Pacer} until it is safe to send (virtual
+ * threads make this cheap), then hand the frame to the transport. Server messages arrive as
+ * {@link IbEvent}s on the {@link EventHandler} passed to the constructor, in order.
  *
  * <p>Market data lines are tracked as held permits: one is taken per subscription and returned
  * when the subscription is cancelled, when a snapshot completes, or when the connection drops.
@@ -88,8 +110,7 @@ public final class TwsClient implements AutoCloseable {
                     })
                     .get();
             this.transport = opened;
-            send(RequestType.START_API, null,
-                    Encoder.startApi(config.clientId(), config.optionalCapabilities()));
+            send(RequestType.START_API, null, OutgoingId.START_API, startApi());
         } catch (RuntimeException e) {
             throw new IOException("could not connect to %s:%d".formatted(config.host(), config.port()), e);
         }
@@ -110,31 +131,57 @@ public final class TwsClient implements AutoCloseable {
         return reqIdSeq.getAndIncrement();
     }
 
-    // ------------------------------------------------------------------ requests
+    // ------------------------------------------------------------------ generic request
+
+    /**
+     * Frames and sends any request, applying the global pacing limit and the type-specific
+     * rule for {@code id} if one is defined. This is the parity entry point: every
+     * {@link OutgoingId} can be sent with its generated protobuf message.
+     */
+    public void send(OutgoingId id, MessageLite body) {
+        send(RequestType.of(id), null, id, body);
+    }
+
+    // ------------------------------------------------------------------ typed conveniences
 
     public void reqCurrentTime() {
-        send(RequestType.CURRENT_TIME, null, Encoder.reqCurrentTime());
+        send(RequestType.CURRENT_TIME, null, OutgoingId.REQ_CURRENT_TIME,
+                CurrentTimeRequestProto.CurrentTimeRequest.getDefaultInstance());
     }
 
     public void reqIds() {
-        send(RequestType.IDS, null, Encoder.reqIds());
+        send(RequestType.IDS, null, OutgoingId.REQ_IDS,
+                IdsRequestProto.IdsRequest.newBuilder().setNumIds(1).build());
     }
 
-    public void reqContractDetails(int reqId, Contract contract) {
-        send(RequestType.CONTRACT_DETAILS, fingerprint(contract),
-                Encoder.reqContractDetails(reqId, contract));
+    public void reqContractDetails(int reqId, ContractProto.Contract contract) {
+        send(RequestType.CONTRACT_DETAILS, fingerprint(contract), OutgoingId.REQ_CONTRACT_DATA,
+                ContractDataRequestProto.ContractDataRequest.newBuilder()
+                        .setReqId(reqId).setContract(contract).build());
     }
 
     public void cancelContractDetails(int reqId) {
-        send(RequestType.CONTRACT_DETAILS, null, Encoder.cancelContractDetails(reqId));
+        send(RequestType.CONTRACT_DETAILS, null, OutgoingId.CANCEL_CONTRACT_DATA,
+                CancelContractDataProto.CancelContractData.newBuilder().setReqId(reqId).build());
     }
 
-    public void reqMktData(int reqId, Contract contract, String genericTickList,
+    public void reqMktData(int reqId, ContractProto.Contract contract, String genericTickList,
                            boolean snapshot, boolean regulatorySnapshot) {
+        MarketDataRequestProto.MarketDataRequest.Builder b = MarketDataRequestProto.MarketDataRequest.newBuilder()
+                .setReqId(reqId).setContract(contract);
+        if (genericTickList != null && !genericTickList.isEmpty()) {
+            b.setGenericTickList(genericTickList);
+        }
+        if (snapshot) {
+            b.setSnapshot(true);
+        }
+        if (regulatorySnapshot) {
+            b.setRegulatorySnapshot(true);
+        }
+
         Pacer.Lease lease = pacer.acquireLease(RequestType.MARKET_DATA);
         try {
-            send(RequestType.MARKET_DATA, null,
-                    Encoder.reqMktData(reqId, contract, genericTickList, snapshot, regulatorySnapshot));
+            send(RequestType.MARKET_DATA, null, OutgoingId.REQ_MKT_DATA, b.build());
             marketDataLeases.put(reqId, lease);
         } catch (RuntimeException e) {
             lease.close();
@@ -143,65 +190,106 @@ public final class TwsClient implements AutoCloseable {
     }
 
     public void cancelMktData(int reqId) {
-        send(RequestType.CANCEL_MARKET_DATA, null, Encoder.cancelMktData(reqId));
+        send(RequestType.CANCEL_MARKET_DATA, null, OutgoingId.CANCEL_MKT_DATA,
+                CancelMarketDataProto.CancelMarketData.newBuilder().setReqId(reqId).build());
         releaseMarketData(reqId);
     }
 
-    public void reqHistoricalData(int reqId, Contract contract, String endDateTime, String barSizeSetting,
-                                  String duration, boolean useRTH, String whatToShow, int formatDate,
-                                  boolean keepUpToDate) {
+    public void reqHistoricalData(int reqId, ContractProto.Contract contract, String endDateTime,
+                                  String barSizeSetting, String duration, boolean useRTH,
+                                  String whatToShow, int formatDate, boolean keepUpToDate) {
         String fingerprint = "%s|%s|%s|%s|%b|%s|%d".formatted(
                 fingerprint(contract), endDateTime, barSizeSetting, duration, useRTH, whatToShow, formatDate);
-        send(RequestType.HISTORICAL_DATA, fingerprint, Encoder.reqHistoricalData(
-                reqId, contract, endDateTime, barSizeSetting, duration, useRTH, whatToShow, formatDate, keepUpToDate));
+        send(RequestType.HISTORICAL_DATA, fingerprint, OutgoingId.REQ_HISTORICAL_DATA,
+                HistoricalDataRequestProto.HistoricalDataRequest.newBuilder()
+                        .setReqId(reqId)
+                        .setContract(contract)
+                        .setEndDateTime(endDateTime == null ? "" : endDateTime)
+                        .setBarSizeSetting(barSizeSetting)
+                        .setDuration(duration)
+                        .setUseRTH(useRTH)
+                        .setWhatToShow(whatToShow)
+                        .setFormatDate(formatDate)
+                        .setKeepUpToDate(keepUpToDate)
+                        .build());
     }
 
     public void cancelHistoricalData(int reqId) {
-        send(RequestType.CANCEL_HISTORICAL_DATA, null, Encoder.cancelHistoricalData(reqId));
+        send(RequestType.CANCEL_HISTORICAL_DATA, null, OutgoingId.CANCEL_HISTORICAL_DATA,
+                CancelHistoricalDataProto.CancelHistoricalData.newBuilder().setReqId(reqId).build());
     }
 
-    public void placeOrder(int orderId, Contract contract, Order order) {
-        send(RequestType.PLACE_ORDER, null, Encoder.placeOrder(orderId, contract, order));
+    public void placeOrder(int orderId, ContractProto.Contract contract, OrderProto.Order order) {
+        send(RequestType.PLACE_ORDER, null, OutgoingId.PLACE_ORDER,
+                PlaceOrderRequestProto.PlaceOrderRequest.newBuilder()
+                        .setOrderId(orderId).setContract(contract).setOrder(order).build());
     }
 
     public void cancelOrder(int orderId) {
-        send(RequestType.CANCEL_ORDER, null, Encoder.cancelOrder(orderId));
+        send(RequestType.CANCEL_ORDER, null, OutgoingId.CANCEL_ORDER,
+                CancelOrderRequestProto.CancelOrderRequest.newBuilder().setOrderId(orderId).build());
     }
 
     public void reqOpenOrders() {
-        send(RequestType.OPEN_ORDERS, null, Encoder.reqOpenOrders());
+        send(RequestType.OPEN_ORDERS, null, OutgoingId.REQ_OPEN_ORDERS,
+                OpenOrdersRequestProto.OpenOrdersRequest.getDefaultInstance());
     }
 
     public void reqPositions() {
-        send(RequestType.POSITIONS, null, Encoder.reqPositions());
+        send(RequestType.POSITIONS, null, OutgoingId.REQ_POSITIONS,
+                PositionsRequestProto.PositionsRequest.getDefaultInstance());
     }
 
     public void cancelPositions() {
-        send(RequestType.CANCEL_POSITIONS, null, Encoder.cancelPositions());
+        send(RequestType.CANCEL_POSITIONS, null, OutgoingId.CANCEL_POSITIONS,
+                CancelPositionsProto.CancelPositions.getDefaultInstance());
     }
 
-    public void reqExecutions(int reqId, ExecutionFilter filter) {
-        send(RequestType.EXECUTIONS, filter == null ? null : filter.accountCode(),
-                Encoder.reqExecutions(reqId, filter == null ? ExecutionFilter.all() : filter));
+    public void reqExecutions(int reqId, ExecutionFilterProto.ExecutionFilter filter) {
+        String account = filter != null && filter.hasAcctCode() ? filter.getAcctCode() : null;
+        send(RequestType.EXECUTIONS, account, OutgoingId.REQ_EXECUTIONS,
+                ExecutionRequestProto.ExecutionRequest.newBuilder()
+                        .setReqId(reqId)
+                        .setExecutionFilter(filter == null
+                                ? ExecutionFilterProto.ExecutionFilter.getDefaultInstance()
+                                : filter)
+                        .build());
     }
 
     public void reqAccountUpdates(boolean subscribe, String accountCode) {
-        send(RequestType.ACCOUNT_UPDATES, accountCode, Encoder.reqAccountUpdates(subscribe, accountCode));
+        AccountDataRequestProto.AccountDataRequest.Builder b = AccountDataRequestProto.AccountDataRequest.newBuilder()
+                .setSubscribe(subscribe);
+        if (accountCode != null && !accountCode.isEmpty()) {
+            b.setAcctCode(accountCode);
+        }
+        send(RequestType.ACCOUNT_UPDATES, accountCode, OutgoingId.REQ_ACCOUNT_DATA, b.build());
     }
 
     public void setMarketDataType(int marketDataType) {
-        send(RequestType.MARKET_DATA_TYPE, null, Encoder.setMarketDataType(marketDataType));
+        send(RequestType.MARKET_DATA_TYPE, null, OutgoingId.REQ_MARKET_DATA_TYPE,
+                MarketDataTypeRequestProto.MarketDataTypeRequest.newBuilder()
+                        .setMarketDataType(marketDataType).build());
     }
 
     // ------------------------------------------------------------------ internals
 
-    private void send(RequestType type, String fingerprint, byte[] frame) {
+    private StartApiRequestProto.StartApiRequest startApi() {
+        StartApiRequestProto.StartApiRequest.Builder b = StartApiRequestProto.StartApiRequest.newBuilder()
+                .setClientId(config.clientId());
+        String capabilities = config.optionalCapabilities();
+        if (capabilities != null && !capabilities.isEmpty()) {
+            b.setOptionalCapabilities(capabilities);
+        }
+        return b.build();
+    }
+
+    private void send(RequestType type, String fingerprint, OutgoingId id, MessageLite body) {
         Transport t = transport;
         if (t == null || !t.isOpen()) {
             throw new IllegalStateException("not connected");
         }
         pacer.acquire(type, fingerprint);
-        t.send(frame);
+        t.send(Encoder.encode(id, body));
     }
 
     private void releaseMarketData(int reqId) {
@@ -219,16 +307,24 @@ public final class TwsClient implements AutoCloseable {
     /** Intercepts lifecycle events so held permits are always returned. */
     private void dispatch(IbEvent event) {
         switch (event) {
-            case IbEvent.Tick.SnapshotEnd(var reqId) -> releaseMarketData(reqId);
+            case IbEvent.Message m -> {
+                if (m.payload() instanceof TickSnapshotEndProto.TickSnapshotEnd end) {
+                    releaseMarketData(end.getReqId());
+                }
+            }
             case IbEvent.Disconnected ignored -> releaseAllMarketData();
-            default -> { }
+            case IbEvent.Connected ignored -> { }
+            case IbEvent.Error ignored -> { }
         }
         handler.onEvent(event);
     }
 
-    private static String fingerprint(Contract contract) {
-        return contract == null ? "" : "%s|%s|%s|%s|%s|%s".formatted(
-                contract.conId(), contract.symbol(), contract.secType(),
-                contract.exchange(), contract.currency(), contract.lastTradeDateOrContractMonth());
+    private static String fingerprint(ContractProto.Contract contract) {
+        if (contract == null) {
+            return "";
+        }
+        return "%s|%s|%s|%s|%s|%s".formatted(
+                contract.getConId(), contract.getSymbol(), contract.getSecType(),
+                contract.getExchange(), contract.getCurrency(), contract.getLastTradeDateOrContractMonth());
     }
 }

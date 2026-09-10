@@ -1,10 +1,10 @@
 package io.github.bjconlan.ibkr;
 
 import io.github.bjconlan.ibkr.event.IbEvent;
-import io.github.bjconlan.ibkr.model.Contract;
 import io.github.bjconlan.ibkr.protocol.IncomingId;
 import io.github.bjconlan.ibkr.protocol.OutgoingId;
 import io.github.bjconlan.ibkr.protocol.Wire;
+import io.github.bjconlan.ibkr.proto.ContractProto;
 import io.github.bjconlan.ibkr.proto.CurrentTimeProto;
 import io.github.bjconlan.ibkr.proto.ManagedAccountsProto;
 import io.github.bjconlan.ibkr.proto.NextValidIdProto;
@@ -27,9 +27,9 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -57,9 +57,12 @@ class FakeServerIntegrationTest {
 
                 client.reqCurrentTime();
 
-                awaitAndAssert(events, IbEvent.ManagedAccounts.class, e -> assertEquals(List.of("DU123", "DU456"), e.accounts()));
-                awaitAndAssert(events, IbEvent.NextValidId.class, e -> assertEquals(9, e.orderId()));
-                awaitAndAssert(events, IbEvent.CurrentTime.class, e -> assertEquals(1_700_000_000L, e.epochSeconds()));
+                awaitMessage(events, ManagedAccountsProto.ManagedAccounts.class,
+                        m -> assertEquals("DU123,DU456", m.getAccountsList()));
+                awaitMessage(events, NextValidIdProto.NextValidId.class,
+                        n -> assertEquals(9, n.getOrderId()));
+                awaitMessage(events, CurrentTimeProto.CurrentTime.class,
+                        t -> assertEquals(1_700_000_000L, t.getCurrentTime()));
 
                 // The server saw START_API and REQ_CURRENT_TIME, both encoded as protobuf ids.
                 List<Integer> requests = List.of(receivedRequests.poll(2, TimeUnit.SECONDS),
@@ -84,32 +87,38 @@ class FakeServerIntegrationTest {
             TwsConfig config = TwsConfig.defaults(8).withPort(server.getLocalPort());
             try (TwsClient client = new TwsClient(config, events::add)) {
                 client.connect();
-                client.reqMktData(42, Contract.stock("AAPL"), "", true, false);
+                client.reqMktData(42, contract("AAPL"), "", true, false);
 
-                awaitAndAssert(events, IbEvent.Tick.Price.class, e -> {
-                    assertEquals(42, e.requestId());
-                    assertEquals(189.25, e.price());
+                awaitMessage(events, TickPriceProto.TickPrice.class, p -> {
+                    assertEquals(42, p.getReqId());
+                    assertEquals(189.25, p.getPrice());
                 });
-                awaitAndAssert(events, IbEvent.Tick.SnapshotEnd.class, e -> assertEquals(42, e.requestId()));
+                awaitMessage(events, TickSnapshotEndProto.TickSnapshotEnd.class, s -> assertEquals(42, s.getReqId()));
             } finally {
                 serverThread.interrupt();
             }
         }
     }
 
-    /** Waits for the next event of the expected type, skipping unrelated events. */
-    private static <T extends IbEvent> void awaitAndAssert(BlockingQueue<IbEvent> events,
-                                                           Class<T> type,
-                                                           java.util.function.Consumer<T> assertion) throws InterruptedException {
+    private static ContractProto.Contract contract(String symbol) {
+        return ContractProto.Contract.newBuilder()
+                .setSymbol(symbol).setSecType("STK").setExchange("SMART").setCurrency("USD")
+                .build();
+    }
+
+    /** Waits for the next message carrying the expected generated type, skipping others. */
+    private static <T extends com.google.protobuf.Message> void awaitMessage(BlockingQueue<IbEvent> events,
+                                                                             Class<T> payloadType,
+                                                                             Consumer<T> assertion) throws InterruptedException {
         long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
         while (System.nanoTime() < deadline) {
             IbEvent event = events.poll(5, TimeUnit.SECONDS);
-            if (type.isInstance(event)) {
-                assertion.accept(type.cast(event));
+            if (event instanceof IbEvent.Message m && payloadType.isInstance(m.payload())) {
+                assertion.accept(payloadType.cast(m.payload()));
                 return;
             }
         }
-        throw new AssertionError("did not receive " + type.getSimpleName());
+        throw new AssertionError("did not receive " + payloadType.getSimpleName());
     }
 
     private static void serve(ServerSocket server, BlockingQueue<Integer> receivedRequests) {

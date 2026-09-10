@@ -3,7 +3,15 @@ package io.github.bjconlan.ibkr.demo;
 import io.github.bjconlan.ibkr.TwsClient;
 import io.github.bjconlan.ibkr.TwsConfig;
 import io.github.bjconlan.ibkr.event.IbEvent;
-import io.github.bjconlan.ibkr.model.Contract;
+import io.github.bjconlan.ibkr.proto.ContractProto;
+import io.github.bjconlan.ibkr.proto.CurrentTimeProto;
+import io.github.bjconlan.ibkr.proto.ErrorMessageProto;
+import io.github.bjconlan.ibkr.proto.HistoricalDataEndProto;
+import io.github.bjconlan.ibkr.proto.HistoricalDataProto;
+import io.github.bjconlan.ibkr.proto.ManagedAccountsProto;
+import io.github.bjconlan.ibkr.proto.NextValidIdProto;
+import io.github.bjconlan.ibkr.proto.TickPriceProto;
+import io.github.bjconlan.ibkr.proto.TickSizeProto;
 import io.github.bjconlan.ibkr.transport.EventHandler;
 
 /**
@@ -19,7 +27,8 @@ import io.github.bjconlan.ibkr.transport.EventHandler;
  * }</pre>
  *
  * <p>The handler is an ordinary method reference and the callback logic is a pattern-matching
- * switch over the sealed {@link IbEvent} hierarchy.
+ * switch over the sealed {@link IbEvent} hierarchy, narrowing each message to its generated
+ * protobuf payload.
  */
 public final class MarketDataDemo {
 
@@ -34,11 +43,14 @@ public final class MarketDataDemo {
         TwsConfig config = TwsConfig.defaults(clientId).withHost(host).withPort(port);
         System.out.printf("connecting to %s:%d as client %d%n", host, port, clientId);
 
+        ContractProto.Contract aapl = ContractProto.Contract.newBuilder()
+                .setSymbol("AAPL").setSecType("STK").setExchange("SMART").setCurrency("USD").build();
+
         EventHandler handler = MarketDataDemo::render;
         try (TwsClient client = new TwsClient(config, handler)) {
             client.connect();
-            client.reqMktData(1, Contract.stock("AAPL"), "", false, false);
-            client.reqHistoricalData(2, Contract.stock("AAPL"), "", "1 D", "5 mins", true, "TRADES", 1, false);
+            client.reqMktData(1, aapl, "", false, false);
+            client.reqHistoricalData(2, aapl, "", "1 D", "5 mins", true, "TRADES", 1, false);
 
             // The callback runs on a virtual dispatcher thread; block here for a while.
             Thread.sleep(30_000);
@@ -54,31 +66,36 @@ public final class MarketDataDemo {
         switch (event) {
             case IbEvent.Connected c ->
                     System.out.printf("connected: server=%d time=%s%n", c.serverVersion(), c.twsTime());
-            case IbEvent.ManagedAccounts m ->
-                    System.out.println("accounts: " + m.accounts());
-            case IbEvent.NextValidId n ->
-                    System.out.println("next valid order id: " + n.orderId());
-            case IbEvent.CurrentTime t ->
-                    System.out.println("server time: " + t.epochSeconds());
-            case IbEvent.Tick.Price p ->
-                    System.out.printf("[%d] price tickType=%d %.4f%n", p.requestId(), p.tickType(), p.price());
-            case IbEvent.Tick.Size s ->
-                    System.out.printf("[%d] size tickType=%d %s%n", s.requestId(), s.tickType(), s.size());
-            case IbEvent.HistoricalBar b ->
-                    System.out.printf("[%d] %s O=%.2f H=%.2f L=%.2f C=%.2f V=%s%n",
-                            b.requestId(), b.bar().date(), b.bar().open(), b.bar().high(),
-                            b.bar().low(), b.bar().close(), b.bar().volume());
-            case IbEvent.HistoricalDataEnd e ->
-                    System.out.printf("[%d] history done %s .. %s%n", e.requestId(), e.startDate(), e.endDate());
-            case IbEvent.OrderStatus s ->
-                    System.out.printf("order %d -> %s (filled %s @ %s)%n",
-                            s.status().orderId(), s.status().status(), s.status().filled(), s.status().avgFillPrice());
-            case IbEvent.Error e ->
-                    System.err.printf("[%d] error %d: %s%n", e.requestId(), e.code(), e.message());
             case IbEvent.Disconnected d ->
                     System.out.println("disconnected: " + d.reason());
+            case IbEvent.Error e ->
+                    System.err.printf("[%d] error %d: %s%n", e.requestId(), e.code(), e.message());
+            case IbEvent.Message m -> renderMessage(m);
+        }
+    }
+
+    private static void renderMessage(IbEvent.Message m) {
+        switch (m.payload()) {
+            case ManagedAccountsProto.ManagedAccounts a ->
+                    System.out.println("accounts: " + a.getAccountsList());
+            case NextValidIdProto.NextValidId n ->
+                    System.out.println("next valid order id: " + n.getOrderId());
+            case CurrentTimeProto.CurrentTime t ->
+                    System.out.println("server time: " + t.getCurrentTime());
+            case TickPriceProto.TickPrice p ->
+                    System.out.printf("[%d] price tickType=%d %.4f%n", p.getReqId(), p.getTickType(), p.getPrice());
+            case TickSizeProto.TickSize s ->
+                    System.out.printf("[%d] size tickType=%d %s%n", s.getReqId(), s.getTickType(), s.getSize());
+            case HistoricalDataProto.HistoricalData h -> h.getHistoricalDataBarsList().forEach(bar ->
+                    System.out.printf("[%d] %s O=%.2f H=%.2f L=%.2f C=%.2f V=%s%n",
+                            h.getReqId(), bar.getDate(), bar.getOpen(), bar.getHigh(),
+                            bar.getLow(), bar.getClose(), bar.getVolume()));
+            case HistoricalDataEndProto.HistoricalDataEnd e ->
+                    System.out.printf("[%d] history done %s .. %s%n", e.getReqId(), e.getStartDateStr(), e.getEndDateStr());
+            case ErrorMessageProto.ErrorMessage e ->
+                    System.err.printf("[%d] error %d: %s%n", e.getId(), e.getErrorCode(), e.getErrorMsg());
             default -> {
-                // Other events are not interesting to this demo.
+                // Other messages are not interesting to this demo.
             }
         }
     }

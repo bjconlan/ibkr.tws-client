@@ -2,6 +2,7 @@ package io.github.bjconlan.ibkr.protocol;
 
 import io.github.bjconlan.ibkr.event.IbEvent;
 import io.github.bjconlan.ibkr.proto.CurrentTimeProto;
+import io.github.bjconlan.ibkr.proto.CurrentTimeRequestProto;
 import io.github.bjconlan.ibkr.proto.HistoricalDataBarProto;
 import io.github.bjconlan.ibkr.proto.HistoricalDataProto;
 import io.github.bjconlan.ibkr.proto.NextValidIdProto;
@@ -15,7 +16,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EncoderDecoderTest {
 
@@ -35,7 +35,8 @@ class EncoderDecoderTest {
 
     @Test
     void requestFrameCarriesLengthAndProtobufMessageId() {
-        byte[] frame = Encoder.reqCurrentTime();
+        byte[] frame = Encoder.encode(OutgoingId.REQ_CURRENT_TIME,
+                CurrentTimeRequestProto.CurrentTimeRequest.getDefaultInstance());
 
         int length = Wire.readInt(frame, 0);
         int msgId = Wire.readInt(frame, 4);
@@ -44,22 +45,23 @@ class EncoderDecoderTest {
     }
 
     @Test
-    void decodesTickPriceIntoSealedEvent() {
-        List<IbEvent> events = decoder.decode(body(Wire.frame(IncomingId.TICK_PRICE,
+    void decodesTickPriceAsTypedProtobufPayload() {
+        IbEvent event = decoder.decode(body(Wire.frame(IncomingId.TICK_PRICE,
                 TickPriceProto.TickPrice.newBuilder()
                         .setReqId(7).setTickType(1).setPrice(123.45).setSize("100").setAttrMask(1)
-                        .build())));
+                        .build()))).getFirst();
 
-        IbEvent.Tick.Price price = assertInstanceOf(IbEvent.Tick.Price.class, events.getFirst());
-        assertEquals(7, price.requestId());
-        assertEquals(1, price.tickType());
-        assertEquals(123.45, price.price());
-        assertEquals("100", price.size());
-        assertTrue(price.attrib().canAutoExecute());
+        assertEquals(IncomingId.TICK_PRICE.id(), assertInstanceOf(IbEvent.Message.class, event).id());
+        TickPriceProto.TickPrice price = payload(event, TickPriceProto.TickPrice.class);
+        assertEquals(7, price.getReqId());
+        assertEquals(1, price.getTickType());
+        assertEquals(123.45, price.getPrice());
+        assertEquals("100", price.getSize());
+        assertEquals(1, price.getAttrMask());
     }
 
     @Test
-    void decodesHistoricalDataIntoOneEventPerBar() {
+    void decodesHistoricalDataCarryingAllBars() {
         byte[] frame = Wire.frame(IncomingId.HISTORICAL_DATA, HistoricalDataProto.HistoricalData.newBuilder()
                 .setReqId(3)
                 .addHistoricalDataBars(HistoricalDataBarProto.HistoricalDataBar.newBuilder()
@@ -71,11 +73,12 @@ class EncoderDecoderTest {
 
         List<IbEvent> events = decoder.decode(body(frame));
 
-        assertEquals(2, events.size());
-        IbEvent.HistoricalBar first = assertInstanceOf(IbEvent.HistoricalBar.class, events.getFirst());
-        assertEquals(3, first.requestId());
-        assertEquals("20260910", first.bar().date());
-        assertEquals(42, first.bar().barCount());
+        assertEquals(1, events.size());
+        HistoricalDataProto.HistoricalData data = payload(events.getFirst(), HistoricalDataProto.HistoricalData.class);
+        assertEquals(3, data.getReqId());
+        assertEquals(2, data.getHistoricalDataBarsCount());
+        assertEquals("20260910", data.getHistoricalDataBars(0).getDate());
+        assertEquals(42, data.getHistoricalDataBars(0).getBarCount());
     }
 
     @Test
@@ -85,8 +88,12 @@ class EncoderDecoderTest {
         IbEvent time = decoder.decode(body(Wire.frame(IncomingId.CURRENT_TIME,
                 CurrentTimeProto.CurrentTime.newBuilder().setCurrentTime(1_700_000_000L).build()))).getFirst();
 
-        assertEquals(11, assertInstanceOf(IbEvent.NextValidId.class, next).orderId());
-        assertEquals(1_700_000_000L, assertInstanceOf(IbEvent.CurrentTime.class, time).epochSeconds());
+        assertEquals(11, payload(next, NextValidIdProto.NextValidId.class).getOrderId());
+        assertEquals(1_700_000_000L, payload(time, CurrentTimeProto.CurrentTime.class).getCurrentTime());
+    }
+
+    private static <T> T payload(IbEvent event, Class<T> type) {
+        return type.cast(assertInstanceOf(IbEvent.Message.class, event).payload());
     }
 
     /** Drops the outer 4-byte length prefix, leaving the {@code [msgId][payload]} body. */
