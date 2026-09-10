@@ -7,10 +7,15 @@ import io.github.bjc.ibkr.model.Contract;
 import io.github.bjc.ibkr.transport.EventHandler;
 
 /**
- * Minimal console demo. Run against a local paper-trading TWS (port 7497) with the API enabled.
+ * Minimal console demo: connect, stream AAPL market data, fetch one day of 5-minute bars, print
+ * everything that comes back.
  *
  * <pre>{@code
- * mvn -q compile exec:java -Dexec.mainClass=io.github.bjc.ibkr.demo.MarketDataDemo
+ * # TWS paper-trading default (127.0.0.1:7497)
+ * mvn -q compile exec:java
+ *
+ * # or an explicit host, port and client id
+ * mvn -q compile exec:java -Dexec.args="127.0.0.1 4002 11"
  * }</pre>
  *
  * <p>The handler is an ordinary method reference and the callback logic is a pattern-matching
@@ -22,8 +27,12 @@ public final class MarketDataDemo {
     }
 
     public static void main(String[] args) throws Exception {
-        int clientId = args.length > 0 ? Integer.parseInt(args[0]) : 1;
-        TwsConfig config = TwsConfig.defaults(clientId);
+        String host = arg(args, 0, System.getenv().getOrDefault("IBKR_GATEWAY_HOST", "127.0.0.1"));
+        int port = Integer.parseInt(arg(args, 1, System.getenv().getOrDefault("IBKR_GATEWAY_PORT", "7497")));
+        int clientId = Integer.parseInt(arg(args, 2, "1"));
+
+        TwsConfig config = TwsConfig.defaults(clientId).withHost(host).withPort(port);
+        System.out.printf("connecting to %s:%d as client %d%n", host, port, clientId);
 
         EventHandler handler = MarketDataDemo::render;
         try (TwsClient client = new TwsClient(config, handler)) {
@@ -37,6 +46,10 @@ public final class MarketDataDemo {
         }
     }
 
+    private static String arg(String[] args, int index, String fallback) {
+        return args.length > index && !args[index].isBlank() ? args[index] : fallback;
+    }
+
     private static void render(IbEvent event) {
         switch (event) {
             case IbEvent.Connected c ->
@@ -45,6 +58,8 @@ public final class MarketDataDemo {
                     System.out.println("accounts: " + m.accounts());
             case IbEvent.NextValidId n ->
                     System.out.println("next valid order id: " + n.orderId());
+            case IbEvent.CurrentTime t ->
+                    System.out.println("server time: " + t.epochSeconds());
             case IbEvent.Tick.Price p ->
                     System.out.printf("[%d] price tickType=%d %.4f%n", p.requestId(), p.tickType(), p.price());
             case IbEvent.Tick.Size s ->

@@ -80,33 +80,74 @@ adding one `IncomingId`/`OutgoingId` constant, one proto file, and one branch in
 `Decoder`/`Encoder` — the compiler enforces that the decoder switch stays
 exhaustive.
 
-## Usage
+## Sample
 
-```java
-TwsConfig config = TwsConfig.defaults(clientId);
-try (TwsClient client = new TwsClient(config, MarketDataDemo::render)) {
-    client.connect();
-    client.reqMktData(1, Contract.stock("AAPL"), "", false, false);
-    client.reqHistoricalData(2, Contract.stock("AAPL"), "", "1 D", "5 mins", true, "TRADES", 1, false);
-    Thread.sleep(30_000);
-}
+The bundled demo connects, streams `AAPL` market data and fetches one day of 5-minute bars:
+
+```sh
+mvn -q test-compile exec:java                                   # 127.0.0.1:7497, clientId 1
+mvn -q test-compile exec:java -Dexec.args="127.0.0.1 4002 11"   # host, port, clientId
 ```
 
-A handler is just a function from event to nothing:
+The demo deliberately lives under `src/test/java`, not in the published jar:
+`src/test/java/io/github/bjc/ibkr/demo/MarketDataDemo.java`. The runnable core:
 
 ```java
-private static void render(IbEvent event) {
-    switch (event) {
-        case IbEvent.Tick.Price p -> render(p.requestId(), p.price());
-        case IbEvent.Tick.Size s  -> render(s.requestId(), s.size());
-        case IbEvent.OrderStatus o -> track(o.status());
-        case IbEvent.Error e -> log.error("[{}] {}: {}", e.requestId(), e.code(), e.message());
-        default -> { }
+public final class MarketDataDemo {
+
+    public static void main(String[] args) throws Exception {
+        TwsConfig config = TwsConfig.defaults(1).withPort(4002);   // paper gateway
+        try (TwsClient client = new TwsClient(config, MarketDataDemo::render)) {
+            client.connect();
+            client.reqMktData(1, Contract.stock("AAPL"), "", false, false);
+            client.reqHistoricalData(2, Contract.stock("AAPL"), "",
+                    "1 D", "5 mins", true, "TRADES", 1, false);
+
+            Thread.sleep(30_000);   // events arrive on the dispatcher thread
+            client.cancelMktData(1);
+        }
+    }
+
+    private static void render(IbEvent event) {
+        switch (event) {
+            case IbEvent.Tick.Price p -> System.out.printf("price %.4f%n", p.price());
+            case IbEvent.Tick.Size s  -> System.out.printf("size %s%n", s.size());
+            case IbEvent.HistoricalBar b -> System.out.printf("%s %.2f%n", b.bar().date(), b.bar().close());
+            case IbEvent.HistoricalDataEnd e -> System.out.println("history done");
+            case IbEvent.OrderStatus o -> System.out.printf("order %d: %s%n", o.status().orderId(), o.status().status());
+            case IbEvent.Error e -> System.err.printf("[%d] %d: %s%n", e.requestId(), e.code(), e.message());
+            case IbEvent.Disconnected d -> System.out.println("disconnected: " + d.reason());
+            default -> { }
+        }
     }
 }
 ```
 
-See `src/main/java/io/github/bjc/ibkr/demo/MarketDataDemo.java`.
+### Using it as a library
+
+It is not published to a registry; install it into the local Maven repository:
+
+```sh
+mvn install
+```
+
+```xml
+<dependency>
+    <groupId>io.github.bjc</groupId>
+    <artifactId>ibkr-tws</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+</dependency>
+```
+
+Request methods are synchronous and may block on the pacer, so issue independent requests from
+virtual threads:
+
+```java
+try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    executor.submit(() -> client.reqHistoricalData(1, aapl, "", "1 D", "5 mins", true, "TRADES", 1, false));
+    executor.submit(() -> client.reqHistoricalData(2, aapl, "", "1 W", "1 hour", true, "TRADES", 1, false));
+}
+```
 
 ## Layout
 

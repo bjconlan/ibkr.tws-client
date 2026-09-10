@@ -115,6 +115,18 @@
                 </executions>
             </plugin>
 
+            <!-- `mvn compile exec:java` runs the bundled demo. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.6.3</version>
+                <configuration>
+                    <mainClass>io.github.bjc.ibkr.demo.MarketDataDemo</mainClass>
+                    <!-- The demo lives under src/test so it is not part of the published jar. -->
+                    <classpathScope>test</classpathScope>
+                </configuration>
+            </plugin>
+
             <plugin>
                 <artifactId>maven-jar-plugin</artifactId>
                 <version>3.4.2</version>
