@@ -154,10 +154,12 @@ class FakeServerIntegrationTest {
         }
     }
 
+    /** Mirrors the real connect ack: {@code [ascii version]\0[time]\0}, length prefixed. */
     private static void writeHandshake(OutputStream out, int version, String time) throws IOException {
+        byte[] versionBytes = Integer.toString(version).getBytes(StandardCharsets.US_ASCII);
         byte[] timeBytes = time.getBytes(StandardCharsets.US_ASCII);
-        ByteBuffer body = ByteBuffer.allocate(4 + timeBytes.length + 1).order(ByteOrder.BIG_ENDIAN);
-        body.putInt(version).put(timeBytes).put((byte) 0);
+        ByteBuffer body = ByteBuffer.allocate(versionBytes.length + 1 + timeBytes.length + 1).order(ByteOrder.BIG_ENDIAN);
+        body.put(versionBytes).put((byte) 0).put(timeBytes).put((byte) 0);
         byte[] bodyBytes = body.array();
         ByteBuffer frame = ByteBuffer.allocate(4 + bodyBytes.length).order(ByteOrder.BIG_ENDIAN);
         frame.putInt(bodyBytes.length).put(bodyBytes);

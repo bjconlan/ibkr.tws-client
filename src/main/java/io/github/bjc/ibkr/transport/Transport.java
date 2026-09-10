@@ -121,20 +121,44 @@ public final class Transport implements AutoCloseable {
         return running.get() && !socket.isClosed();
     }
 
+    /**
+     * The connect ack is {@code [ascii serverVersion]\0[time]\0} - the version is a decimal string,
+     * not a raw int (the C++ client parses it with {@code atoi}, Python with {@code int()}). The
+     * protobuf-era raw-int message ids only begin after this ack.
+     */
     private static Handshake parseHandshake(byte[] frame) throws IOException {
-        if (frame.length < 4) {
-            throw new IOException("handshake frame too short: " + frame.length);
+        int versionEnd = indexOfNul(frame, 0);
+        if (versionEnd < 0) {
+            throw new IOException("handshake frame missing version terminator");
         }
-        int version = Wire.readInt(frame, 0);
+        int version;
+        try {
+            version = Integer.parseInt(new String(frame, 0, versionEnd, StandardCharsets.US_ASCII).trim());
+        } catch (NumberFormatException e) {
+            throw new IOException("handshake frame has malformed server version", e);
+        }
+
         String time = null;
-        if (version >= 20 && frame.length > 4) {
-            int end = 4;
-            while (end < frame.length && frame[end] != 0) {
-                end++;
+        if (version >= 20) {
+            int timeStart = versionEnd + 1;
+            int timeEnd = indexOfNul(frame, timeStart);
+            if (timeEnd < 0) {
+                timeEnd = frame.length;
             }
-            time = new String(frame, 4, end - 4, StandardCharsets.UTF_8);
+            if (timeEnd > timeStart) {
+                time = new String(frame, timeStart, timeEnd - timeStart, StandardCharsets.UTF_8);
+            }
         }
         return new Handshake(version, time);
+    }
+
+    private static int indexOfNul(byte[] frame, int from) {
+        for (int i = from; i < frame.length; i++) {
+            if (frame[i] == 0) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static byte[] readFrame(DataInputStream in) throws IOException {

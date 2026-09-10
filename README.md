@@ -28,6 +28,22 @@ mise install
 mvn test
 ```
 
+### Smoke test against a real gateway
+
+`GatewaySmokeTest` is opt-in and uses a live IB Gateway / TWS:
+
+```sh
+IBKR_SMOKE=true IBKR_GATEWAY_PORT=4002 mvn test -Dtest=GatewaySmokeTest
+```
+
+It connects, resolves `AAPL` contract details and requests current time. Environment
+overrides: `IBKR_GATEWAY_HOST` (default `127.0.0.1`), `IBKR_GATEWAY_PORT` (default `4002`),
+`IBKR_CLIENT_ID` (default `99`).
+
+For reference, `~/Workspace/lo.fi/compose.yaml` runs a paper IB Gateway in Docker
+(`ghcr.io/gnzsnz/ib-gateway`) on `127.0.0.1:4002`; this client has been smoke-tested against
+it. Market data may still be refused with error `10197` when another session is live.
+
 ## What is implemented
 
 | Area | Requests | Events |
@@ -89,6 +105,14 @@ io.github.bjc.ibkr
 `proto/` holds the upstream `.proto` files re-homed to `io.github.bjc.ibkr.proto`.
 They are compiled by `protobuf-maven-plugin`, which downloads the matching
 `protoc` binary from Maven Central.
+
+## Protocol notes
+
+- The connect ack is `[ascii serverVersion]\0[time]\0`, length-prefixed. The server version
+  is a decimal string, not a raw int (the C++ client parses it with `atoi`, Python with
+  `int()`). Raw-int message ids only start after the ack.
+- Every post-ack frame is `[length][msgId][protobuf body]`; for protobuf messages the wire id
+  is the base id plus 200.
 
 ## Pacing
 
