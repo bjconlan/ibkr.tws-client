@@ -18,8 +18,9 @@ around three ideas:
 
 - JDK 25
 - Maven 3.9+
-- TWS or IB Gateway reporting server version **201 or later** (the protobuf era).
-  The client refuses older servers rather than silently mis-parsing them.
+- TWS or IB Gateway reporting server version **201 or later** (the protobuf era). The
+  handshake advertises `v100..226`; older servers are refused rather than silently
+  mis-parsed. See [Compatibility](#compatibility) for the exact versions.
 
 The toolchain is pinned with `mise`:
 
@@ -62,6 +63,31 @@ IBKR_SMOKE=true IBKR_GATEWAY_PORT=4002 mvn test -Dtest=GatewaySmokeTest
 Environment overrides: `IBKR_GATEWAY_HOST` (default `127.0.0.1`), `IBKR_GATEWAY_PORT`
 (default `4002`), `IBKR_CLIENT_ID` (default `99`). Market data may still be refused with
 error `10197` when another session is live.
+
+## Compatibility
+
+| Component | Version | Notes |
+|-----------|---------|-------|
+| Upstream TWS API | **10.50.02** (`twsapi_macunix.1050.02.zip`) | from `interactivebrokers.github.io/downloads`; `API_VersionNum.txt` and the Python package report 10.50.02 while the upstream Java `pom.xml` says 10.50.01 |
+| Envelope version | `v100..226` | advertised in the `API\0` handshake |
+| Server version | **201..226** | 201 is `MIN_SERVER_VER_PROTOBUF`; anything below is legacy text and is refused |
+| Protobuf runtime | `com.google.protobuf:protobuf-java:4.29.5` | matches the upstream `protobuf-java-4.29.5.jar` |
+| `protoc` | 4.29.5 | downloaded by `protobuf-maven-plugin` from Maven Central |
+| JDK | 25 | `maven.compiler.release=25` |
+| Validated against | IB Gateway 10.50.1e (`ghcr.io/gnzsnz/ib-gateway`), server 226 | paper account, read-only API |
+| resilience4j | 2.4.0 | `ratelimiter`, `bulkhead`, `retry`, `circuitbreaker` |
+| JUnit / Testcontainers | 6.1.3 / 1.21.4 | test scope only |
+
+Notes:
+
+- The client advertises a maximum of server version **226**. A newer gateway that reports a higher
+  version would still speak the same ids for the implemented messages, but the negotiation cap
+  should be raised (`Wire.MAX_VERSION`) and the client re-tested.
+- The vendored proto files are a **subset** (60 of the upstream 200) chosen to cover the
+  implemented messages. Their `java_package` was changed to `io.github.bjc.ibkr.proto`; field
+  numbers and types are untouched. Re-vendor from the same 10.50.02 release when adding messages.
+- Protobuf is required. TWS/Gateway releases old enough to report server version `< 201` use the
+  legacy text framing and are not supported.
 
 ## What is implemented
 
@@ -162,9 +188,9 @@ io.github.bjc.ibkr
 └── transport/         socket + virtual-thread reader/writer/dispatcher
 ```
 
-`proto/` holds the upstream `.proto` files re-homed to `io.github.bjc.ibkr.proto`.
-They are compiled by `protobuf-maven-plugin`, which downloads the matching
-`protoc` binary from Maven Central.
+`proto/` holds 60 of the 200 upstream `.proto` files (from TWS API 10.50.02) re-homed to
+`io.github.bjc.ibkr.proto`. They are compiled by `protobuf-maven-plugin`, which downloads the
+matching `protoc` 4.29.5 binary from Maven Central.
 
 ## Protocol notes
 
