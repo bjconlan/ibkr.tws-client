@@ -13,6 +13,9 @@ import java.time.Duration;
  * @param connectTimeout    socket connect timeout
  * @param connectAttempts   total connection attempts, including the first
  * @param initialBackoff    first retry delay; subsequent attempts back off exponentially
+ * @param marketDataLines   account's maximum market data lines; drives the aggregate pacing
+ *                          limit (lines / 2 requests per second) and the market data and
+ *                          tick-by-tick concurrency limits. Defaults to 100
  */
 public record TwsConfig(
         String host,
@@ -21,11 +24,15 @@ public record TwsConfig(
         String optionalCapabilities,
         Duration connectTimeout,
         int connectAttempts,
-        Duration initialBackoff) {
+        Duration initialBackoff,
+        int marketDataLines) {
 
     public TwsConfig {
         if (connectAttempts < 1) {
             throw new IllegalArgumentException("connectAttempts must be >= 1");
+        }
+        if (marketDataLines < 1) {
+            throw new IllegalArgumentException("marketDataLines must be >= 1");
         }
     }
 
@@ -38,18 +45,31 @@ public record TwsConfig(
                 "",
                 Duration.ofSeconds(10),
                 3,
-                Duration.ofMillis(500));
+                Duration.ofMillis(500),
+                100);
     }
 
     public TwsConfig withHost(String host) {
-        return new TwsConfig(host, port, clientId, optionalCapabilities, connectTimeout, connectAttempts, initialBackoff);
+        return new TwsConfig(host, port, clientId, optionalCapabilities, connectTimeout, connectAttempts,
+                initialBackoff, marketDataLines);
     }
 
     public TwsConfig withPort(int port) {
-        return new TwsConfig(host, port, clientId, optionalCapabilities, connectTimeout, connectAttempts, initialBackoff);
+        return new TwsConfig(host, port, clientId, optionalCapabilities, connectTimeout, connectAttempts,
+                initialBackoff, marketDataLines);
     }
 
     public TwsConfig withClientId(int clientId) {
-        return new TwsConfig(host, port, clientId, optionalCapabilities, connectTimeout, connectAttempts, initialBackoff);
+        return new TwsConfig(host, port, clientId, optionalCapabilities, connectTimeout, connectAttempts,
+                initialBackoff, marketDataLines);
+    }
+
+    /**
+     * Sets the account's market data line entitlement, which scales the aggregate request limit
+     * and the market data subscriptions this client is willing to open.
+     */
+    public TwsConfig withMarketDataLines(int marketDataLines) {
+        return new TwsConfig(host, port, clientId, optionalCapabilities, connectTimeout, connectAttempts,
+                initialBackoff, marketDataLines);
     }
 }

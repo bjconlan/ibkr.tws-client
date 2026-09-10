@@ -12,7 +12,8 @@ around three ideas:
 - **Blocking is cheap.** The socket reader, writer and event dispatcher each run
   on a virtual thread, so a slow handler cannot stall the wire.
 - **Pacing is declared, not improvised.** IBKR's documented request limits are
-  values (`PacingRule`) attached to request types, enforced by a `Pacer`.
+  values (`PacingRule`) attached to outbound request ids and enforced by a `Pacer`;
+  the aggregate limit is derived from the account's market data lines.
 
 ## Requirements
 
@@ -185,7 +186,7 @@ io.github.bjconlan.ibkr
 ├── TwsConfig          connection and retry settings
 ├── event/IbEvent      sealed hierarchy: lifecycle records + Message(id, protobuf payload)
 ├── protocol/          framing (Wire), request encoding, message decoding, id maps
-├── pacing/            RequestType, PacingRule(s), Pacer
+├── pacing/            PacingRule(s), PacingKeys, Pacer
 └── transport/         socket + virtual-thread reader/writer/dispatcher
 ```
 
@@ -203,34 +204,81 @@ matching `protoc` 4.29.5 binary from Maven Central.
 
 ## Pacing
 
-Limits live in `PacingRules` as plain values:
+IBKR documents pacing in two layers: one aggregate request limit per connection, and a few
+per-request constraints. This client models only what is documented; rules live in
+`PacingRules` as plain values and are enforced by `Pacer`.
+
+### Aggregate request limit
+
+From [Pacing Limitations → Introduction](https://www.interactivebrokers.com/docs/tws-api/doc/pacing-limitations/introduction):
+
+> The maximum number of API requests that can be submitted are equivalent to your Maximum
+> Market Data Lines **divided by 2, per second**. By default, all users maintain 100 market
+> data lines. Therefore, users have a pacing limitation of (100/2) = **50 requests per second**.
+> … Clients that have increased their market data lines to 200 … would receive (200/2) = 100
+> requests per second, and this would increment as your market data lines increase or decrease.
+
+It is a **per-connection aggregate over every request type**, and only the request that starts
+a subscription counts — streaming responses do not. The client derives this limit from
+`TwsConfig.marketDataLines()` (default `100`):
 
 ```java
-new PacingRule.Rate("ib.historical.60-per-10m", 60, Duration.ofMinutes(10))
-new PacingRule.KeyedRate("ib.historical.identical-15s", 1, Duration.ofSeconds(15))
-new PacingRule.KeyedRate("ib.historical.same-contract-6-per-2s", 6, Duration.ofSeconds(2))
-new PacingRule.Concurrency("ib.marketdata.lines", 100)
+TwsConfig config = TwsConfig.defaults(1).withMarketDataLines(200);  // 100 requests/second
 ```
 
+### Documented per-request constraints
+
 | Rule | Applies to | Documented limit |
-|------|------------|------------------|
-| `Rate` | all requests | 50 messages/second (configured at 45) |
-| `Rate` | historical data | 60 per 10 minutes |
-| `KeyedRate` | historical data | identical request not more than once per 15s |
-| `KeyedRate` | historical data | same contract/exchange/tick type max 6 per 2s |
-| `Concurrency` | market data | 100 simultaneous lines |
-| `Rate` | orders and cancels | 50 per second (configured at 45) |
-| `KeyedRate` | executions | conservative 1 per 15s |
+|------|-----------|------------------|
+| `Rate` (`ib.pacing.requests`) | every request | market data lines ÷ 2 per second (aggregate) |
+| `Rate` (`ib.historical.60-per-10m`) | `REQ_HISTORICAL_DATA` | more than 60 requests in any ten minute period |
+| `KeyedRate` (`ib.historical.identical-15s`, scope `REQUEST`) | `REQ_HISTORICAL_DATA` | identical requests within 15 seconds |
+| `KeyedRate` (`ib.historical.same-contract-6-per-2s`, scope `CONTRACT_EXCHANGE_TICK_TYPE`) | `REQ_HISTORICAL_DATA` | six or more requests for the same contract, exchange and tick type within two seconds |
+| `Concurrency` (`ib.marketdata.lines`) | `REQ_MKT_DATA` | market data lines outstanding at once |
+| `Concurrency` (`ib.tickbytick.subscriptions`) | `REQ_TICK_BY_TICK_DATA` | 5% of market data lines outstanding at once |
 
-Rate rules block the calling thread (cheap on a virtual thread) until a permit is
+The historical limits are quoted from [Pacing Violations for Small Bars](https://www.interactivebrokers.com/docs/tws-api/doc/market-data-historical/historical-data-limitations/pacing-violations-for-small-bars-30-secs-or-less).
+The concurrent market data line count comes from [How Market Data is Allocated](https://www.interactivebrokers.com/docs/general/market-data-subscriptions/market-data-lines/how-market-data-is-allocated)
+(100 minimum, scaling with commissions and equity), and the tick-by-tick cap from
+[Request Tick By Tick Data](https://www.interactivebrokers.com/docs/tws-api/doc/market-data-live/tick-by-tick-data/request-tick-by-tick-data).
+
+There is deliberately **no** order, cancel or execution rate rule: the current documentation
+defines none, so those requests are governed only by the aggregate limit.
+
+### Behaviour
+
+`Rate` and `KeyedRate` block the calling thread (cheap on a virtual thread) until a permit is
 available, up to `Pacer.DEFAULT_ACQUIRE_TIMEOUT` (30s), after which a
-`PacingViolationException` is thrown. Concurrency rules return a `Lease` that is
-released on cancel, on snapshot completion, or on disconnect.
+`PacingViolationException` is thrown instead of sending a request IBKR would reject.
+`Concurrency` rules return a `Lease` that is released on cancel, on snapshot completion, or on
+disconnect. This is the client-side counterpart to IBKR's gateway behaviour, where breaking the
+limit raises [error **100** and terminates the session after **3** violations](https://www.interactivebrokers.com/docs/tws-api/doc/pacing-limitations/pacing-behavior),
+or the gateway silently paces if configured that way.
 
-`resilience4j` backs the rate limiters (`RateLimiter`), concurrency limits
-(`Bulkhead`) and connection retries (`Retry`). It is isolated to `pacing/` and
-`TwsClient.connect()`, so a different implementation can be substituted without
-touching the protocol code.
+### Custom rules
+
+Pass a `Pacer` to override the defaults for any outbound id:
+
+```java
+Pacer pacer = new Pacer(
+        PacingRules.global(200),                       // aggregate: 100/s
+        Map.of(OutgoingId.REQ_MKT_DATA,
+                List.of(new PacingRule.Concurrency("ib.marketdata.lines", 50))),
+        Duration.ofSeconds(30));
+
+TwsClient client = new TwsClient(config, handler, pacer);
+```
+
+Rules are keyed by `OutgoingId`, so any request can carry its own policy. `PacingRule` is a
+sealed interface with three shapes: `Rate`, `KeyedRate` (with a `REQUEST` or
+`CONTRACT_EXCHANGE_TICK_TYPE` scope) and `Concurrency`.
+
+`resilience4j` backs the rate limiters (`RateLimiter`), concurrency limits (`Bulkhead`) and
+connection retries (`Retry`). It is isolated to `pacing/` and `TwsClient.connect()`, so a
+different implementation can be substituted without touching the protocol code.
+
+One documented rule is not modelled: **BID_ASK historical requests count twice**. If you use
+`whatToShow = "BID_ASK"`, budget for half the headline historical rate yourself.
 
 ## Trade-offs and limitations
 
@@ -244,8 +292,9 @@ touching the protocol code.
 - **No automatic reconnect loop.** `connect()` retries the initial handshake, but
   a dropped connection emits `Disconnected` and stops. Reconnection policy is left
   to the caller, who may want to re-subscribe explicitly.
-- **Pacing values are conservative defaults.** They are the documented ceilings
-  minus headroom; adjust `PacingRules.defaults()` to your account's entitlements.
+- **Pacing follows the documented limits.** The aggregate rate is market data lines ÷ 2
+  (`TwsConfig.marketDataLines`), so set it to your entitlement; the defaults assume the
+  minimum of 100 lines. BID_ASK double-counting is documented but not modelled.
 
 ## License
 

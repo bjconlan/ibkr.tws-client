@@ -1,5 +1,6 @@
 package io.github.bjconlan.ibkr.pacing;
 
+import io.github.bjconlan.ibkr.protocol.OutgoingId;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadConfig;
 import io.github.resilience4j.ratelimiter.RateLimiter;
@@ -12,10 +13,10 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Enforces the {@link PacingRule}s attached to {@link RequestType}s.
+ * Enforces the {@link PacingRule}s attached to {@link OutgoingId}s.
  *
  * <p>Rate limits are backed by resilience4j {@link RateLimiter}s, which share state by name so
- * that two requests of the same type draw from the same budget. Subscription limits are backed by
+ * that two requests of the same kind draw from the same budget. Subscription limits are backed by
  * resilience4j {@link Bulkhead}s: a caller takes a {@link Lease} when it subscribes and closes the
  * lease when it unsubscribes.
  *
@@ -30,7 +31,7 @@ public final class Pacer {
     public static final Duration DEFAULT_ACQUIRE_TIMEOUT = Duration.ofSeconds(30);
 
     private final List<PacingRule> globalRules;
-    private final Map<RequestType, List<PacingRule>> rules;
+    private final Map<OutgoingId, List<PacingRule>> rules;
     private final Duration acquireTimeout;
 
     private final Map<String, RateLimiter> rateLimiters = new ConcurrentHashMap<>();
@@ -38,16 +39,23 @@ public final class Pacer {
     private final Map<String, Bulkhead> bulkheads = new ConcurrentHashMap<>();
 
     public Pacer(List<PacingRule> globalRules,
-                 Map<RequestType, List<PacingRule>> rules,
+                 Map<OutgoingId, List<PacingRule>> rules,
                  Duration acquireTimeout) {
         this.globalRules = List.copyOf(globalRules);
         this.rules = Map.copyOf(rules);
         this.acquireTimeout = Objects.requireNonNull(acquireTimeout, "acquireTimeout");
     }
 
-    /** A pacer configured with {@link PacingRules#defaults()}. */
+    /** A pacer with the documented limits for {@code marketDataLines} lines and default timeout. */
+    public static Pacer of(int marketDataLines) {
+        return new Pacer(PacingRules.global(marketDataLines),
+                PacingRules.standard(marketDataLines),
+                DEFAULT_ACQUIRE_TIMEOUT);
+    }
+
+    /** A pacer for the default entitlement of 100 market data lines. */
     public static Pacer standard() {
-        return new Pacer(PacingRules.GLOBAL, PacingRules.defaults(), DEFAULT_ACQUIRE_TIMEOUT);
+        return of(100);
     }
 
     public Duration acquireTimeout() {
@@ -55,22 +63,21 @@ public final class Pacer {
     }
 
     /**
-     * Blocks until {@code type} may be sent. {@code fingerprint} distinguishes individual
-     * requests for {@link PacingRule.KeyedRate} rules and may be {@code null} when the caller
-     * knows no keyed rule applies.
+     * Blocks until a request of {@code id} may be sent. {@code keys} supplies the fingerprints
+     * needed by {@link PacingRule.KeyedRate} rules; use {@link PacingKeys#NONE} when none apply.
      *
      * @throws PacingViolationException if a permit could not be obtained in time
      */
-    public void acquire(RequestType type, String fingerprint) {
+    public void acquire(OutgoingId id, PacingKeys keys) {
         for (PacingRule rule : globalRules) {
-            admit(rule, type, fingerprint);
+            admit(rule, id, keys);
         }
-        for (PacingRule rule : rules.getOrDefault(type, List.of())) {
+        for (PacingRule rule : rules.getOrDefault(id, List.of())) {
             if (rule instanceof PacingRule.Concurrency) {
                 // Held permits are taken through acquireLease and are not rate admissions.
                 continue;
             }
-            admit(rule, type, fingerprint);
+            admit(rule, id, keys);
         }
     }
 
@@ -80,16 +87,16 @@ public final class Pacer {
      *
      * @throws PacingViolationException if no permit is currently free
      */
-    public Lease acquireLease(RequestType type) {
+    public Lease acquireLease(OutgoingId id) {
         Bulkhead bulkhead = null;
-        for (PacingRule rule : rules.getOrDefault(type, List.of())) {
+        for (PacingRule rule : rules.getOrDefault(id, List.of())) {
             if (rule instanceof PacingRule.Concurrency concurrency) {
                 bulkhead = bulkheads.computeIfAbsent(concurrency.name(),
                         name -> Bulkhead.of(name, BulkheadConfig.custom()
                                 .maxConcurrentCalls(concurrency.permits())
                                 .build()));
                 if (!bulkhead.tryAcquirePermission()) {
-                    throw new PacingViolationException(concurrency.name(), type,
+                    throw new PacingViolationException(concurrency.name(), id,
                             "%s limit reached (%d)".formatted(concurrency.name(), concurrency.permits()));
                 }
             }
@@ -101,14 +108,18 @@ public final class Pacer {
         return new Lease(acquired.getName(), acquired::releasePermission);
     }
 
-    private void admit(PacingRule rule, RequestType type, String fingerprint) {
+    private void admit(PacingRule rule, OutgoingId id, PacingKeys keys) {
         switch (rule) {
-            case PacingRule.Rate rate -> acquire(limiter(rate), rate.name(), type);
+            case PacingRule.Rate rate -> acquire(limiter(rate), rate.name(), id);
             case PacingRule.KeyedRate keyed -> {
+                String fingerprint = switch (keyed.scope()) {
+                    case REQUEST -> keys.request();
+                    case CONTRACT_EXCHANGE_TICK_TYPE -> keys.scope();
+                };
                 if (fingerprint == null || fingerprint.isBlank()) {
                     return;
                 }
-                acquire(keyedLimiter(keyed, fingerprint), keyed.name(), type);
+                acquire(keyedLimiter(keyed, fingerprint), keyed.name(), id);
             }
             case PacingRule.Concurrency ignored -> {
                 // handled by acquireLease
@@ -116,9 +127,9 @@ public final class Pacer {
         }
     }
 
-    private void acquire(RateLimiter limiter, String name, RequestType type) {
+    private void acquire(RateLimiter limiter, String name, OutgoingId id) {
         if (!limiter.acquirePermission()) {
-            throw new PacingViolationException(name, type,
+            throw new PacingViolationException(name, id,
                     "waited %s for a permit from %s".formatted(acquireTimeout, name));
         }
     }

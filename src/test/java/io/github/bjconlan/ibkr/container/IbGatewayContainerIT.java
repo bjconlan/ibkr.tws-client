@@ -67,7 +67,7 @@ class IbGatewayContainerIT {
     void connectsAndServesSessionContractAndTimeData() throws Exception {
         BlockingQueue<IbEvent> events = new LinkedBlockingQueue<>();
         TwsConfig config = new TwsConfig(gateway.gatewayHost(), gateway.gatewayPort(), 91, "",
-                Duration.ofSeconds(15), 3, Duration.ofSeconds(2));
+                Duration.ofSeconds(15), 3, Duration.ofSeconds(2), 100);
 
         try (TwsClient client = new TwsClient(config, events::add)) {
             client.connect();

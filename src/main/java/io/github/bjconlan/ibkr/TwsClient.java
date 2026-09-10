@@ -3,7 +3,7 @@ package io.github.bjconlan.ibkr;
 import com.google.protobuf.MessageLite;
 import io.github.bjconlan.ibkr.event.IbEvent;
 import io.github.bjconlan.ibkr.pacing.Pacer;
-import io.github.bjconlan.ibkr.pacing.RequestType;
+import io.github.bjconlan.ibkr.pacing.PacingKeys;
 import io.github.bjconlan.ibkr.protocol.Encoder;
 import io.github.bjconlan.ibkr.protocol.OutgoingId;
 import io.github.bjconlan.ibkr.proto.AccountDataRequestProto;
@@ -43,10 +43,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  * A minimal, thread-safe TWS API client.
  *
  * <p>{@link #send(OutgoingId, MessageLite)} frames and paces any request the protocol defines;
- * the typed methods below are conveniences that build the common messages. Request methods
- * are synchronous: they may block on the {@link Pacer} until it is safe to send (virtual
- * threads make this cheap), then hand the frame to the transport. Server messages arrive as
- * {@link IbEvent}s on the {@link EventHandler} passed to the constructor, in order.
+ * the typed methods below are conveniences that build the common messages. Request methods are
+ * synchronous: they may block on the {@link Pacer} until it is safe to send (virtual threads make
+ * this cheap), then hand the frame to the transport. Server messages arrive as {@link IbEvent}s
+ * on the {@link EventHandler} passed to the constructor, in order.
+ *
+ * <p>Pacing is configured from {@link TwsConfig#marketDataLines()}: the account's market data line
+ * entitlement sets the aggregate request rate and the subscription concurrency limits. Pass a
+ * custom {@link Pacer} to the constructor to override any of the documented rules.
  *
  * <p>Market data lines are tracked as held permits: one is taken per subscription and returned
  * when the subscription is cancelled, when a snapshot completes, or when the connection drops.
@@ -63,7 +67,7 @@ public final class TwsClient implements AutoCloseable {
     private volatile Transport transport;
 
     public TwsClient(TwsConfig config, EventHandler handler) {
-        this(config, handler, Pacer.standard());
+        this(config, handler, Pacer.of(config.marketDataLines()));
     }
 
     public TwsClient(TwsConfig config, EventHandler handler, Pacer pacer) {
@@ -110,7 +114,7 @@ public final class TwsClient implements AutoCloseable {
                     })
                     .get();
             this.transport = opened;
-            send(RequestType.START_API, null, OutgoingId.START_API, startApi());
+            send(OutgoingId.START_API, PacingKeys.NONE, startApi());
         } catch (RuntimeException e) {
             throw new IOException("could not connect to %s:%d".formatted(config.host(), config.port()), e);
         }
@@ -134,34 +138,34 @@ public final class TwsClient implements AutoCloseable {
     // ------------------------------------------------------------------ generic request
 
     /**
-     * Frames and sends any request, applying the global pacing limit and the type-specific
-     * rule for {@code id} if one is defined. This is the parity entry point: every
-     * {@link OutgoingId} can be sent with its generated protobuf message.
+     * Frames and sends any request, applying the aggregate limit and the type-specific rules for
+     * {@code id} if any are defined. This is the parity entry point: every {@link OutgoingId} can
+     * be sent with its generated protobuf message.
      */
     public void send(OutgoingId id, MessageLite body) {
-        send(RequestType.of(id), null, id, body);
+        send(id, PacingKeys.NONE, body);
     }
 
     // ------------------------------------------------------------------ typed conveniences
 
     public void reqCurrentTime() {
-        send(RequestType.CURRENT_TIME, null, OutgoingId.REQ_CURRENT_TIME,
+        send(OutgoingId.REQ_CURRENT_TIME, PacingKeys.NONE,
                 CurrentTimeRequestProto.CurrentTimeRequest.getDefaultInstance());
     }
 
     public void reqIds() {
-        send(RequestType.IDS, null, OutgoingId.REQ_IDS,
+        send(OutgoingId.REQ_IDS, PacingKeys.NONE,
                 IdsRequestProto.IdsRequest.newBuilder().setNumIds(1).build());
     }
 
     public void reqContractDetails(int reqId, ContractProto.Contract contract) {
-        send(RequestType.CONTRACT_DETAILS, fingerprint(contract), OutgoingId.REQ_CONTRACT_DATA,
+        send(OutgoingId.REQ_CONTRACT_DATA, PacingKeys.NONE,
                 ContractDataRequestProto.ContractDataRequest.newBuilder()
                         .setReqId(reqId).setContract(contract).build());
     }
 
     public void cancelContractDetails(int reqId) {
-        send(RequestType.CONTRACT_DETAILS, null, OutgoingId.CANCEL_CONTRACT_DATA,
+        send(OutgoingId.CANCEL_CONTRACT_DATA, PacingKeys.NONE,
                 CancelContractDataProto.CancelContractData.newBuilder().setReqId(reqId).build());
     }
 
@@ -179,9 +183,9 @@ public final class TwsClient implements AutoCloseable {
             b.setRegulatorySnapshot(true);
         }
 
-        Pacer.Lease lease = pacer.acquireLease(RequestType.MARKET_DATA);
+        Pacer.Lease lease = pacer.acquireLease(OutgoingId.REQ_MKT_DATA);
         try {
-            send(RequestType.MARKET_DATA, null, OutgoingId.REQ_MKT_DATA, b.build());
+            send(OutgoingId.REQ_MKT_DATA, PacingKeys.NONE, b.build());
             marketDataLeases.put(reqId, lease);
         } catch (RuntimeException e) {
             lease.close();
@@ -190,7 +194,7 @@ public final class TwsClient implements AutoCloseable {
     }
 
     public void cancelMktData(int reqId) {
-        send(RequestType.CANCEL_MARKET_DATA, null, OutgoingId.CANCEL_MKT_DATA,
+        send(OutgoingId.CANCEL_MKT_DATA, PacingKeys.NONE,
                 CancelMarketDataProto.CancelMarketData.newBuilder().setReqId(reqId).build());
         releaseMarketData(reqId);
     }
@@ -198,9 +202,10 @@ public final class TwsClient implements AutoCloseable {
     public void reqHistoricalData(int reqId, ContractProto.Contract contract, String endDateTime,
                                   String barSizeSetting, String duration, boolean useRTH,
                                   String whatToShow, int formatDate, boolean keepUpToDate) {
-        String fingerprint = "%s|%s|%s|%s|%b|%s|%d".formatted(
-                fingerprint(contract), endDateTime, barSizeSetting, duration, useRTH, whatToShow, formatDate);
-        send(RequestType.HISTORICAL_DATA, fingerprint, OutgoingId.REQ_HISTORICAL_DATA,
+        String contractScope = "%s|%s".formatted(fingerprint(contract), whatToShow);
+        String request = "%s|%s|%s|%s|%b|%d".formatted(
+                contractScope, endDateTime, barSizeSetting, duration, useRTH, formatDate);
+        send(OutgoingId.REQ_HISTORICAL_DATA, new PacingKeys(request, contractScope),
                 HistoricalDataRequestProto.HistoricalDataRequest.newBuilder()
                         .setReqId(reqId)
                         .setContract(contract)
@@ -215,39 +220,38 @@ public final class TwsClient implements AutoCloseable {
     }
 
     public void cancelHistoricalData(int reqId) {
-        send(RequestType.CANCEL_HISTORICAL_DATA, null, OutgoingId.CANCEL_HISTORICAL_DATA,
+        send(OutgoingId.CANCEL_HISTORICAL_DATA, PacingKeys.NONE,
                 CancelHistoricalDataProto.CancelHistoricalData.newBuilder().setReqId(reqId).build());
     }
 
     public void placeOrder(int orderId, ContractProto.Contract contract, OrderProto.Order order) {
-        send(RequestType.PLACE_ORDER, null, OutgoingId.PLACE_ORDER,
+        send(OutgoingId.PLACE_ORDER, PacingKeys.NONE,
                 PlaceOrderRequestProto.PlaceOrderRequest.newBuilder()
                         .setOrderId(orderId).setContract(contract).setOrder(order).build());
     }
 
     public void cancelOrder(int orderId) {
-        send(RequestType.CANCEL_ORDER, null, OutgoingId.CANCEL_ORDER,
+        send(OutgoingId.CANCEL_ORDER, PacingKeys.NONE,
                 CancelOrderRequestProto.CancelOrderRequest.newBuilder().setOrderId(orderId).build());
     }
 
     public void reqOpenOrders() {
-        send(RequestType.OPEN_ORDERS, null, OutgoingId.REQ_OPEN_ORDERS,
+        send(OutgoingId.REQ_OPEN_ORDERS, PacingKeys.NONE,
                 OpenOrdersRequestProto.OpenOrdersRequest.getDefaultInstance());
     }
 
     public void reqPositions() {
-        send(RequestType.POSITIONS, null, OutgoingId.REQ_POSITIONS,
+        send(OutgoingId.REQ_POSITIONS, PacingKeys.NONE,
                 PositionsRequestProto.PositionsRequest.getDefaultInstance());
     }
 
     public void cancelPositions() {
-        send(RequestType.CANCEL_POSITIONS, null, OutgoingId.CANCEL_POSITIONS,
+        send(OutgoingId.CANCEL_POSITIONS, PacingKeys.NONE,
                 CancelPositionsProto.CancelPositions.getDefaultInstance());
     }
 
     public void reqExecutions(int reqId, ExecutionFilterProto.ExecutionFilter filter) {
-        String account = filter != null && filter.hasAcctCode() ? filter.getAcctCode() : null;
-        send(RequestType.EXECUTIONS, account, OutgoingId.REQ_EXECUTIONS,
+        send(OutgoingId.REQ_EXECUTIONS, PacingKeys.NONE,
                 ExecutionRequestProto.ExecutionRequest.newBuilder()
                         .setReqId(reqId)
                         .setExecutionFilter(filter == null
@@ -262,11 +266,11 @@ public final class TwsClient implements AutoCloseable {
         if (accountCode != null && !accountCode.isEmpty()) {
             b.setAcctCode(accountCode);
         }
-        send(RequestType.ACCOUNT_UPDATES, accountCode, OutgoingId.REQ_ACCOUNT_DATA, b.build());
+        send(OutgoingId.REQ_ACCOUNT_DATA, PacingKeys.NONE, b.build());
     }
 
     public void setMarketDataType(int marketDataType) {
-        send(RequestType.MARKET_DATA_TYPE, null, OutgoingId.REQ_MARKET_DATA_TYPE,
+        send(OutgoingId.REQ_MARKET_DATA_TYPE, PacingKeys.NONE,
                 MarketDataTypeRequestProto.MarketDataTypeRequest.newBuilder()
                         .setMarketDataType(marketDataType).build());
     }
@@ -283,12 +287,12 @@ public final class TwsClient implements AutoCloseable {
         return b.build();
     }
 
-    private void send(RequestType type, String fingerprint, OutgoingId id, MessageLite body) {
+    private void send(OutgoingId id, PacingKeys keys, MessageLite body) {
         Transport t = transport;
         if (t == null || !t.isOpen()) {
             throw new IllegalStateException("not connected");
         }
-        pacer.acquire(type, fingerprint);
+        pacer.acquire(id, keys);
         t.send(Encoder.encode(id, body));
     }
 

@@ -1,5 +1,7 @@
 package io.github.bjconlan.ibkr.pacing;
 
+import io.github.bjconlan.ibkr.protocol.OutgoingId;
+
 /**
  * Thrown when a request cannot be admitted without breaching a documented Interactive
  * Brokers pacing limit within the configured wait budget. The request has not been sent.
@@ -7,12 +9,12 @@ package io.github.bjconlan.ibkr.pacing;
 public class PacingViolationException extends RuntimeException {
 
     private final String rule;
-    private final RequestType type;
+    private final OutgoingId id;
 
-    public PacingViolationException(String rule, RequestType type, String message) {
+    public PacingViolationException(String rule, OutgoingId id, String message) {
         super(message);
         this.rule = rule;
-        this.type = type;
+        this.id = id;
     }
 
     /** The name of the {@link PacingRule} that could not be satisfied. */
@@ -20,8 +22,8 @@ public class PacingViolationException extends RuntimeException {
         return rule;
     }
 
-    /** The request type that was rejected. */
-    public RequestType type() {
-        return type;
+    /** The outbound request that was rejected. */
+    public OutgoingId id() {
+        return id;
     }
 }

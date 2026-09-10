@@ -47,7 +47,7 @@ class GatewaySmokeTest {
     void connectsAndRetrievesContractDetailsAndTime() throws Exception {
         BlockingQueue<IbEvent> events = new LinkedBlockingQueue<>();
         TwsConfig config = new TwsConfig(host(), port(), clientId(), "", Duration.ofSeconds(10), 2,
-                Duration.ofMillis(500));
+                Duration.ofMillis(500), 100);
 
         try (TwsClient client = new TwsClient(config, events::add)) {
             client.connect();
