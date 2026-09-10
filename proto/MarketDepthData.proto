@@ -1,0 +1,36 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "MarketDepthDataProto";
+option java_package = "io.github.bjconlan.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message MarketDepthData {
+    optional int32 position = 1; // The ranking position in the DOM ladder.
+    optional int32 operation = 2; // Indicates a change in the row's value.
+    optional int32 side = 3; // 0 for ask, 1 for bid.
+    optional double price = 4; // The order's price.
+    optional string size = 5; // Represents volume of the order data.
+    optional string marketMaker = 6; // The exchange holding the order if isSmartDepth is True, otherwise the MPID of the market maker.
+    optional bool isSmartDepth = 7; // True to request market data from SMART rather than a direct exchange.
+}

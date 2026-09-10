@@ -1,0 +1,36 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "HistoricalNewsRequestProto";
+option java_package = "io.github.bjconlan.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message HistoricalNewsRequest {
+    optional int32 reqId = 1; // Unique request identifier used for tracking across EWrapper.
+    optional int32 conId = 2; // The unique IB contract identifier.
+    optional string providerCodes = 3; // A '+'-separated list of provider codes.
+    optional string startDateTime = 4; // The datetime when the request should be submitted. Formatted as "YYYYMMDD-HH:mm:ss" to assume UTC or "YYYYMMDD HH:mm:ss TMZ".
+    optional string endDateTime = 5; // The request's end date and time. This should be formatted as "YYYYMMDD HH:mm:ss TMZ" or an empty string indicates current present moment.
+    optional int32 totalResults = 6; // Total number of news articles matching the request.
+    map<string, string> historicalNewsOptions = 7; // Reserved for internal use. Should be defined as null.
+}

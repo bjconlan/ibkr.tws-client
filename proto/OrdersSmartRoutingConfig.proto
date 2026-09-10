@@ -1,0 +1,33 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "OrdersSmartRoutingConfigProto";
+option java_package = "io.github.bjconlan.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message OrdersSmartRoutingConfig {
+    optional bool seekPriceImprovement = 1; // Indicate an order should look for better pricing values beyond what was submitted.
+    optional bool preOpenReroute = 2; // For orders submitted before the open, true ensures your orders are routed prior to the open. This directive only applies to stocks listed on a major exchange that are routed using IB SmartRouting.
+    optional bool doNotRouteToDarkPools = 3; // Declare that orders should not go through Interactive Brokers' Dark Pool.
+    optional string defaultAlgorithm = 4; // Default routing algorith when submitting orders as Smart. Supports "SMART", "SMART MaxRebate", "SMART PreferRebate", "SMART PreferFill", "SMART MaxFill", "SMART Primary", "SMART VRebate", "SMART VLowFee", "SMART DarkOnly".
+}

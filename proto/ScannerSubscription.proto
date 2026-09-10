@@ -1,0 +1,52 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "ScannerSubscriptionProto";
+option java_package = "io.github.bjconlan.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message ScannerSubscription {
+    optional int32 numberOfRows = 1; // Determine the number of rows or results from the market scanner to be returned. Returns the maximum, 50, by default.
+    optional string instrument = 2; // Returns the Instrument type to be returned. See scannerParameters xml response for details.
+    optional string locationCode = 3; // Returns the exchange regions to be returned. See scannerParameters xml response for details.
+    optional string scanCode = 4; // Returns the code to sort results by. See scannerParameters xml response for details.
+    optional double abovePrice = 5; // Set the maximum MARK price to filter by.
+    optional double belowPrice = 6; // Set the minimum MARK price to filter by.
+    optional int64 aboveVolume = 7; // Set the minimum trade volume of the day.
+    optional double marketCapAbove = 8; // Set the minimum market cap restriction.
+    optional double marketCapBelow = 9; // Set the maximum market cap restriction.
+    optional string moodyRatingAbove = 10; // Minimum Moody Rating.
+    optional string moodyRatingBelow = 11; // Maximum Moody Rating.
+    optional string spRatingAbove = 12; // Standard & Poor's (S&P) uses a letter-based rating system to evaluate the creditworthiness of bonds and debt issuers. This field will indicate the lowest acceptable rating to be returned from the result.
+    optional string spRatingBelow = 13; // Standard & Poor's (S&P) uses a letter-based rating system to evaluate the creditworthiness of bonds and debt issuers. This field will indicate the highest acceptable rating to be returned from the result.
+    optional string maturityDateAbove = 14; // Set the minimum Maturity date. Formatted as YYYYMMDD.
+    optional string maturityDateBelow = 15; // Set the maximum Maturity date. Formatted as YYYYMMDD.
+    optional double couponRateAbove = 16; // Set the minimum Coupon Rate.
+    optional double couponRateBelow = 17; // Set the maximum Coupon Rate.
+    optional bool excludeConvertible = 18; // Determine of the bond should be convertible or not.
+    optional int64 averageOptionVolumeAbove = 19; // Determine the minimum average option volume from the underlying.
+    optional string scannerSettingPairs = 20; // TagValue pair to indicate scanner restrictions. Currently only supports TagValue("annualVolatility", true) or an empty list.
+    optional string stockTypeFilter = 21; // Determine the stock type: Common, CORP, ADR, ETF, ETN, REIT, CEF, ETMF, EFN.
+    map<string, string> scannerSubscriptionFilterOptions = 22;
+    map<string, string> scannerSubscriptionOptions = 23;
+}

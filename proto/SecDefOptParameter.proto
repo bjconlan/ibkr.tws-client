@@ -1,0 +1,36 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "SecDefOptParameterProto";
+option java_package = "io.github.bjconlan.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message SecDefOptParameter {
+    optional int32 reqId = 1; // Unique request identifier used for tracking across EWrapper.
+	optional string exchange = 2; // The destination exchange.
+    optional int32 underlyingConId = 3; // IBKR Contract Identifier of the underlying contract.
+	optional string tradingClass = 4; // The trading class name for this contract. Available in TWS contract description window as well. For example, weekly S&P options are "SPXW" compared to the monthly contract which uses "SPX".
+	optional string multiplier = 5; // The instrument's multiplier (i.e. options, futures).
+	repeated string expirations = 6; // A list of the expiries for the options of this underlying on this exchange.
+	repeated double strikes = 7; // The list of strikes for the given contract.
+}

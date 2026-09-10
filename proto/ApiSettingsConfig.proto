@@ -1,0 +1,65 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "ApiSettingsConfigProto";
+option java_package = "io.github.bjconlan.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message ApiSettingsConfig {
+    optional bool readOnlyApi = 1; // true indicates modifications cannot be made throuh the API.
+    optional bool totalQuantityForMutualFunds = 2; // If set to true, Mutual Fund API client can send monetary value for BUY order and NOT send CashQty, or send CashQty and NOT send totalQuantity.
+    optional bool downloadOpenOrdersOnConnection = 3; // Declare that all open orders be returned to EWrapper.OpenOrders.
+    optional bool includeVirtualFxPositions = 4; // true to include VirtualFX in the EWrapper.positions reponses.
+    optional bool prepareDailyPnL = 5; // Prepare profit and loss value calculations when downloading positions data.
+    optional bool sendStatusUpdatesForVolatilityOrders = 6; // Receive notifications for every order change from volatility.
+    optional string encodeApiMessages = 7; // Define API message encoding. Supports "osCodePage" (For C++) or "ascii7".
+    optional int32 socketPort = 8; // Supported socket port connection allowed for API connection requests.
+    optional bool useNegativeAutoRange = 9; // If this flag is checked, orders that are automatically bound to an API client as a result of reqOpenOrders or reqAutoOpenOrders calls or system-generated orders like volatility hedging orders, will be assigned negative API Order ID numbers. If this flag is unchecked, orders bound as a result of reqOpenOrders or reqAutoOpenOrders calls will be assigned incremental API Order ID numbers. Volatility hedging orders will be assigned API Order ID numbers in the format 'parent order API ID + 1" when possible.
+    optional bool createApiMessageLogFile = 10; // Toggle if an API log should be created.
+    optional bool includeMarketDataInLogFile = 11; // true to have market data included in API logs.
+    optional bool exposeTradingScheduleToApi = 12; // Flag as true to have Trader Workstation expose the complete known look-ahead trading schedule to the API, which is one week for most products. Leave unchecked to only send trading schedule for today plus the next open trading day.
+    optional bool splitInsuredDepositFromCashBalance = 13; // False: The API "Cash Balance" includes the "Insured Bank Deposit Sweep Program" balance. True: Report "Cash Balance" and "Insured Bank Deposit Sweep Program" balances separately in the API.
+    optional bool sendZeroPositionsForTodayOnly = 14; // True will return all positions that have already closed with a '0' value.
+    optional bool letApiAccountRequestsSwitchSubscription = 15; // Internal use. Market data management.
+    optional bool useAccountGroupsWithAllocationMethods = 16; // See [Unification of Groups and Profiles](https://www.interactivebrokers.com/docs/tws-api/doc/financial-advisors/unification-of-groups-and-profiles) for details.
+    optional string loggingLevel = 17; // Level of detail for API logs. Supports "system", "warning", "error", "info" and "detail".
+    optional int32 masterClientId = 18; // The master identifier for order updates.
+    optional int32 bulkDataTimeout = 19; // When amount of data sent by the Trader Workstation becomes too large, it is possible that network connection to API client cannot handle the load. Trader Workstation waits for specified amount of seconds and then disconnects API client if data cannot be sent fast enough.
+    optional string componentExchSeparator = 20; // Delimeter for smartComponentMap.
+    optional bool showForexDataIn1_10Pips = 21; // True indicates forex market data uses 1/10 pips instead of 1/2.
+    optional bool allowForexTradingIn1_10Pips = 22; // If true, forex trades can be received in 1/10 pips instead of 1/2.
+    optional bool roundAccountValuesToNearestWholeNumber = 23; // Account values will be rounded to whole numbers instead of precise values.
+    optional bool sendMarketDataInLotsForUsStocks = 24; // Deliver market data as represented in lots rather than direct share sizes.
+    optional bool showAdvancedOrderRejectInUi = 25; // True indicates AdvancedOrderReject messages will appear in the UI instead of through the socket.
+    optional bool rejectMessagesAboveMaxRate = 26; // false indicates the API messages above maximum allowed message rate will be paced at max-msg/second. true indicates overhead messages will be rejected instantly to ensure timely response.
+    optional bool maintainConnectionOnIncorrectFields = 27; // true to maintain API connection if requests are sent with incorrect API socket attributes.
+    optional bool compatibilityModeNasdaqStocks = 28; // Indicate "ISLAND" is a valid exchange value for NASDAQ listed stocks.
+    optional string sendInstrumentTimezone = 29; // Historical data will be returned based on the indicated value. Supported values include "instrument": representing the timezone of the instrument's primary listing exchange; "operator": representing the local timezone set in TWS or IBG; and "utc": representing the Coordinated Universal Time.
+    optional bool sendForexDataInCompatibilityMode = 30; // Foreign exchange values will be delivered as integer rates instead of decimal.
+    optional bool maintainAndResubmitOrdersOnReconnect = 31; // true to submit orders that attempted transmissions while disconnected from the network.
+    optional int32 historicalDataMaxSize = 32; // The maximum data size for historical bars. Supports 1, 4, 16.
+    optional bool autoReportNettingEventContractTrades = 33; // True to net event contract trades.
+    optional string optionExerciseRequestType = 34; // Definition of how options should behave when exercised.
+    optional bool allowLocalhostOnly = 35; // Determine if API connections are only permitted from localhost. If this value is true, trustedIPs will be ignored.
+    repeated string trustedIPs = 36; // A string of IP addresses that may connect to the Trader Workstation.
+}

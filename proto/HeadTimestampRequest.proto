@@ -1,0 +1,36 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+import "Contract.proto";
+
+option java_outer_classname = "HeadTimestampRequestProto";
+option java_package = "io.github.bjconlan.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message HeadTimestampRequest {
+    optional int32 reqId = 1; // Unique request identifier used for tracking across EWrapper.
+	optional Contract contract = 2; // Contract object containing defining characteristics for ticker.
+	optional bool useRTH = 3; // Declare that the request should only include Regular Trading Hours. Extended trading hours will be excluded.
+	optional string whatToShow = 4; // Data source type.
+    optional int32 formatDate = 5; // Using 1 will return UTC time in YYYYMMDD-hh:mm:ss format. Using 2 will return epoch time.
+}

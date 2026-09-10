@@ -1,0 +1,40 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+import "Contract.proto";
+
+option java_outer_classname = "HistoricalTicksRequestProto";
+option java_package = "io.github.bjconlan.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message HistoricalTicksRequest {
+    optional int32 reqId = 1; // Unique request identifier used for tracking across EWrapper.
+	optional Contract contract = 2; // Contract object containing defining characteristics for ticker.
+	optional string startDateTime = 3; // The datetime when the request should be submitted. Formatted as "YYYYMMDD-HH:mm:ss" to assume UTC or "YYYYMMDD HH:mm:ss TMZ".
+	optional string endDateTime = 4; // The request's end date and time. This should be formatted as "YYYYMMDD HH:mm:ss TMZ" or an empty string indicates current present moment.
+    optional int32 numberOfTicks = 5; // Number of distinct data points. Max is 1000 per request.
+	optional string whatToShow = 6; // Data source type.
+	optional bool useRTH = 7; // Declare that the request should only include Regular Trading Hours. Extended trading hours will be excluded.
+	optional bool ignoreSize = 8; // Omit updates that reflect only changes in size, and not price. Applicable to Bid\_Ask data requests.
+    map<string, string> miscOptions = 9; // Should be defined as *null*; reserved for internal use.
+}

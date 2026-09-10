@@ -83,9 +83,10 @@ Notes:
 - The client advertises a maximum of server version **226**. A newer gateway that reports a higher
   version would still speak the same ids for the implemented messages, but the negotiation cap
   should be raised (`Wire.MAX_VERSION`) and the client re-tested.
-- The vendored proto files are a **subset** (60 of the upstream 200) chosen to cover the
-  implemented messages. Their `java_package` was changed to `io.github.bjconlan.ibkr.proto`; field
-  numbers and types are untouched. Re-vendor from the same 10.50.02 release when adding messages.
+- **All 200** upstream proto files are vendored under `proto/`, re-homed to
+  `io.github.bjconlan.ibkr.proto`; field numbers and types are untouched. Only the subset that
+  backs the currently wired messages is referenced from code; the rest compile but are idle
+  until a feature uses them. Re-vendor from the same 10.50.02 release when upgrading.
 - Protobuf is required. TWS/Gateway releases old enough to report server version `< 201` use the
   legacy text framing and are not supported.
 
@@ -100,11 +101,10 @@ Notes:
 | Orders | `placeOrder`, `cancelOrder`, `reqOpenOrders` | `OrderStatus`, `OpenOrder`, `OpenOrdersEnd` |
 | Account | `reqAccountUpdates`, `reqPositions`, `cancelPositions`, `reqExecutions` | `AccountValueUpdate`, `PortfolioValueUpdate`, `AccountDownloadEnd`, `PositionUpdate`, `PositionsEnd`, `ExecutionDetails`, `ExecutionsEnd`, `CommissionReportReceived` |
 
-Everything else in the upstream API (scanners, news, PnL, market depth,
-tick-by-tick, WSH, FA, and so on) is deliberately omitted. Adding a message means
-adding one `IncomingId`/`OutgoingId` constant, one proto file, and one branch in
-`Decoder`/`Encoder` — the compiler enforces that the decoder switch stays
-exhaustive.
+Only part of the upstream API is wired so far. The remaining areas (scanners, news, PnL,
+market depth, tick-by-tick, WSH, FA, and so on) are being brought up to parity. Adding a
+message means adding one `IncomingId`/`OutgoingId` constant and one branch in
+`Decoder`/`Encoder` — the compiler enforces that the decoder switch stays exhaustive.
 
 ## Sample
 
@@ -188,7 +188,7 @@ io.github.bjconlan.ibkr
 └── transport/         socket + virtual-thread reader/writer/dispatcher
 ```
 
-`proto/` holds 60 of the 200 upstream `.proto` files (from TWS API 10.50.02) re-homed to
+`proto/` holds all 200 upstream `.proto` files (from TWS API 10.50.02) re-homed to
 `io.github.bjconlan.ibkr.proto`. They are compiled by `protobuf-maven-plugin`, which downloads the
 matching `protoc` 4.29.5 binary from Maven Central.
 

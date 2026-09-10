@@ -1,0 +1,38 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "RealTimeBarTickProto";
+option java_package = "io.github.bjconlan.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message RealTimeBarTick {
+    optional int32 reqId = 1; // Unique request identifier used for tracking across EWrapper.
+    optional int64 time = 2; // Trigger time for the request. Formatted as HH:MM:ss (UTC assumed if timezone note set).
+    optional double open = 3; // The bar's open point.
+    optional double high = 4; // The bar's high point.
+    optional double low = 5; // The bar's low point.
+    optional double close = 6; // The last execution price of the bar.
+	optional string volume = 7; // The bar's traded volume (only returned for TRADES data).
+	optional string WAP = 8; // Weighted Average Price of the returning bar.
+    optional int32 count = 9; // Total trades within the bar.
+}
