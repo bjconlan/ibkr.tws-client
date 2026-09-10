@@ -28,21 +28,40 @@ mise install
 mvn test
 ```
 
-### Smoke test against a real gateway
+### Tests
 
-`GatewaySmokeTest` is opt-in and uses a live IB Gateway / TWS:
+| Command | What runs |
+|---------|-----------|
+| `mvn test` | Unit tests: codec, pacer, fake-TWS socket test. No Docker, no network. |
+| `mvn verify` | The unit tests plus `IbGatewayContainerIT`, if credentials and Docker are available. |
+
+`IbGatewayContainerIT` starts a paper IB Gateway with Testcontainers (the same
+`ghcr.io/gnzsnz/ib-gateway` image as `~/Workspace/lo.fi/compose.yaml`), waits for IBC's
+"Login has completed" log line plus the API port, then connects, resolves `AAPL` contract
+details and requests current time.
+
+Credentials come from a git-ignored `.env` at the project root, or from the
+`TWS_USERID` / `TWS_PASSWORD` environment variables (which take precedence):
+
+```sh
+cp .env.example .env   # then fill in paper credentials
+mvn verify
+```
+
+Without credentials or Docker the integration test is skipped, not failed. Run it directly
+with `mvn verify -Dit.test=IbGatewayContainerIT`. The container is read-only, so no orders
+are placed.
+
+There is also `GatewaySmokeTest`, which points at an *already running* gateway instead of
+starting one:
 
 ```sh
 IBKR_SMOKE=true IBKR_GATEWAY_PORT=4002 mvn test -Dtest=GatewaySmokeTest
 ```
 
-It connects, resolves `AAPL` contract details and requests current time. Environment
-overrides: `IBKR_GATEWAY_HOST` (default `127.0.0.1`), `IBKR_GATEWAY_PORT` (default `4002`),
-`IBKR_CLIENT_ID` (default `99`).
-
-For reference, `~/Workspace/lo.fi/compose.yaml` runs a paper IB Gateway in Docker
-(`ghcr.io/gnzsnz/ib-gateway`) on `127.0.0.1:4002`; this client has been smoke-tested against
-it. Market data may still be refused with error `10197` when another session is live.
+Environment overrides: `IBKR_GATEWAY_HOST` (default `127.0.0.1`), `IBKR_GATEWAY_PORT`
+(default `4002`), `IBKR_CLIENT_ID` (default `99`). Market data may still be refused with
+error `10197` when another session is live.
 
 ## What is implemented
 
