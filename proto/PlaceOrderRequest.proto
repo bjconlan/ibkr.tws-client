@@ -26,7 +26,7 @@ import "Order.proto";
 import "AttachedOrders.proto";
 
 option java_outer_classname = "PlaceOrderRequestProto";
-option java_package = "io.github.bjc.ibkr.proto";
+option java_package = "io.github.bjconlan.ibkr.proto";
 option csharp_namespace = "IBApi.protobuf";
 
 message PlaceOrderRequest {

@@ -24,7 +24,7 @@ package protobuf;
 import "OrderCancel.proto";
 
 option java_outer_classname = "CancelOrderRequestProto";
-option java_package = "io.github.bjc.ibkr.proto";
+option java_package = "io.github.bjconlan.ibkr.proto";
 option csharp_namespace = "IBApi.protobuf";
 
 message CancelOrderRequest {

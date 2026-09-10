@@ -24,7 +24,7 @@ package protobuf;
 import "Contract.proto";
 
 option java_outer_classname = "MarketDataRequestProto";
-option java_package = "io.github.bjc.ibkr.proto";
+option java_package = "io.github.bjconlan.ibkr.proto";
 option csharp_namespace = "IBApi.protobuf";
 
 message MarketDataRequest {

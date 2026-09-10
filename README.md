@@ -84,7 +84,7 @@ Notes:
   version would still speak the same ids for the implemented messages, but the negotiation cap
   should be raised (`Wire.MAX_VERSION`) and the client re-tested.
 - The vendored proto files are a **subset** (60 of the upstream 200) chosen to cover the
-  implemented messages. Their `java_package` was changed to `io.github.bjc.ibkr.proto`; field
+  implemented messages. Their `java_package` was changed to `io.github.bjconlan.ibkr.proto`; field
   numbers and types are untouched. Re-vendor from the same 10.50.02 release when adding messages.
 - Protobuf is required. TWS/Gateway releases old enough to report server version `< 201` use the
   legacy text framing and are not supported.
@@ -116,7 +116,7 @@ mvn -q test-compile exec:java -Dexec.args="127.0.0.1 4002 11"   # host, port, cl
 ```
 
 The demo deliberately lives under `src/test/java`, not in the published jar:
-`src/test/java/io/github/bjc/ibkr/demo/MarketDataDemo.java`. The runnable core:
+`src/test/java/io/github/bjconlan/ibkr/demo/MarketDataDemo.java`. The runnable core:
 
 ```java
 public final class MarketDataDemo {
@@ -159,8 +159,8 @@ mvn install
 
 ```xml
 <dependency>
-    <groupId>io.github.bjc</groupId>
-    <artifactId>ibkr-tws</artifactId>
+    <groupId>io.github.bjconlan.ibkr</groupId>
+    <artifactId>tws-client</artifactId>
     <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
@@ -178,7 +178,7 @@ try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 ## Layout
 
 ```
-io.github.bjc.ibkr
+io.github.bjconlan.ibkr
 ├── TwsClient          facade; request methods, request-id allocation, lease bookkeeping
 ├── TwsConfig          connection and retry settings
 ├── event/IbEvent      sealed hierarchy of everything the server can send
@@ -189,7 +189,7 @@ io.github.bjc.ibkr
 ```
 
 `proto/` holds 60 of the 200 upstream `.proto` files (from TWS API 10.50.02) re-homed to
-`io.github.bjc.ibkr.proto`. They are compiled by `protobuf-maven-plugin`, which downloads the
+`io.github.bjconlan.ibkr.proto`. They are compiled by `protobuf-maven-plugin`, which downloads the
 matching `protoc` 4.29.5 binary from Maven Central.
 
 ## Protocol notes
