@@ -1,0 +1,53 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+import "ComboLeg.proto";
+import "DeltaNeutralContract.proto";
+
+option java_outer_classname = "ContractProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message Contract {
+    optional int32 conId = 1; // The unique IB contract identifier.
+    optional string symbol = 2; // The underlying's asset symbol.
+    optional string secType = 3; // The security's type: STK – stock (or ETF) OPT – option FUT – future IND – index FOP – futures option CASH – forex pair BAG – combo WAR – warrant BOND- bond CMDTY- commodity NEWS- news FUND- mutual fund.
+    optional string lastTradeDateOrContractMonth = 4; // The contract's last trading day or contract month (for Options and Futures). Strings with format YYYYMM will be interpreted as the Contract Month whereas YYYYMMDD will be interpreted as Last Trading Day.
+    optional double strike = 5; // The option's strike price.
+    optional string right = 6; // Either Put or Call (i.e. Options). Valid values are P, PUT, C, CALL.
+    optional double multiplier = 7; // The instrument's multiplier (i.e. options, futures).
+    optional string exchange = 8; // The destination exchange.
+    optional string primaryExch = 9; // The contract's primary exchange. For smart routed contracts, used to define contract in case of ambiguity.Should be defined as native exchange of contract. For exchanges which contain a period in name, will only be part of exchange name prior to period, i.e. ENEXT for ENEXT.BE.
+    optional string currency = 10; // The underlying's currency.
+    optional string localSymbol = 11; // The contract's symbol within its primary exchange. For options, this will be the OCC symbol.
+    optional string tradingClass = 12; // The trading class name for this contract. Available in TWS contract description window as well. For example, weekly S&P options are "SPXW" compared to the monthly contract which uses "SPX".
+    optional string secIdType = 13; // Security's identifier when querying contract's details or placing orders ISIN – Example: Apple: US0378331005 CUSIP – Example: Apple: 037833100.
+    optional string secId = 14; // Identifier of the security type.
+    optional string description = 15; // Description of the contract.
+    optional string issuerId = 16; // IssuerId of the contract.
+    optional DeltaNeutralContract deltaNeutralContract = 17; // Delta and underlying price for Delta-Neutral combo orders. Underlying (STK or FUT).
+    optional bool includeExpired = 18; // If set to true, contract details requests and historical data queries can be performed pertaining to expired futures contracts. Expired options or other instrument types are not available.
+    optional string comboLegsDescrip = 19; // Details for each leg of the combination contract. 
+    repeated ComboLeg comboLegs = 20; // The legs of a combined contract definition.
+	optional string lastTradeDate = 21; // The contract's last trading day.
+}

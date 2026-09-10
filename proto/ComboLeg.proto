@@ -1,0 +1,38 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "ComboLegProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message ComboLeg {
+    optional int32 conId = 1; // The Contract's IB's unique id.
+    optional int32 ratio = 2; // The rate of the leg's shares compared to the Order's totalQuantity. Final number of shares acquired will be equal to ( ratio * totalQuantity ).
+    optional string action = 3; // The side (buy or sell) of the leg: For individual accounts, only BUY and SELL are available. SSHORT is for institutions.
+    optional string exchange = 4; // The destination exchange to which the order will be routed.
+    optional int32 openClose = 5; // Specifies whether an order is an open or closing order. For institutional customers to determine if this order is to open or close a position. 0 – Same as the parent security. This is the only option for retail customers. 1 – Open. This value is only valid for institutional customers. 2 – Close. This value is only valid for institutional customers. 3 – Unknown.
+    optional int32 shortSalesSlot = 6; // Used for IBExecution accounts to indicate if a leg is short.
+    optional string designatedLocation = 7; // When ShortSaleSlot is 2, this field shall contain the designated location.
+    optional int32 exemptCode = 8; // Mark order as exempt from short sale uptick rule. Possible values: 0 – Does not apply the rule. -1 – Applies the short sale uptick rule.
+    optional double perLegPrice = 9; // Limit price by leg. All legs must contain perLegPrice if used.
+}

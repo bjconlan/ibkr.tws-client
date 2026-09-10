@@ -1,0 +1,42 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "OrderConditionProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message OrderCondition {
+    optional int32 type = 1; // Type of order condition to be used. Supported values include: Price: 1, Time: 3, Margin: 4, Execution: 5, Volume: 6, PercentChange: 7.
+    optional bool isConjunctionConnection = 2; // true to declare multiple conditions must be met (AND). False to declare any conidition should trigger conditional logic.
+    optional bool isMore = 3; // The order condition will trigger if greater than the indicated value.
+    optional int32 conId = 4; // The unique IB contract identifier.
+    optional string exchange = 5; // The destination exchange.
+    optional string symbol = 6; // The underlying's asset symbol.
+    optional string secType = 7; // The security's type: STK – stock (or ETF) OPT – option FUT – future IND – index FOP – futures option CASH – forex pair BAG – combo WAR – warrant BOND- bond CMDTY- commodity NEWS- news FUND- mutual fund.
+    optional int32 percent = 8; // Value to reflect percentage change to trigger a condition.
+    optional double changePercent = 9; // Decimal value representing change to trigger a condition.
+    optional double price = 10; // The price for the condition to trigger.
+    optional int32 triggerMethod = 11; // Specifies how the stop should trigger.
+    optional string time = 12; // Trigger time for the request. Formatted as HH:MM:ss (UTC assumed if timezone note set).
+    optional int32 volume = 13; // The bar's traded volume (only returned for TRADES data).
+}

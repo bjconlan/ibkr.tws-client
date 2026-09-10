@@ -1,0 +1,32 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "OrderCancelProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message OrderCancel {
+    optional string manualOrderCancelTime = 1; // Used by brokers and advisors when manually entering an order cancellation request. Format should be "YYYYMMDD-HH:mm:ss" using UTC as the timezone value.
+    optional string extOperator = 2; // Following [CME Rule 576](https://www.cmegroup.com/rulebook/files/cme-group-Rule-576.pdf), the ExtOperator field will signify the unique API operator at the time of trading for order management.
+    optional int32 manualOrderIndicator = 3; // Following [CME Rule 576](https://www.cmegroup.com/rulebook/files/cme-group-Rule-576.pdf), the ManualOrderIndicator field will signify if an order is manual (1) or automated (0).
+}

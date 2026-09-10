@@ -1,0 +1,38 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "ExecutionFilterProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message ExecutionFilter {
+    optional int32 clientId = 1; // Client identifier the order was submitted through.
+    optional string acctCode = 2; // Account identifier that executed the trade.
+    optional string time = 3; // Declare the date/time to receive executions at and after the designated time. Can be used in combination with LastNDays or SpecificDates. Requests should be formatted as "YYYYMMDD HH:mm:ss TMZ" or in UTC as "YYYYMMDD-HH:mm:ss". If no date is passed, the current date is assumed.
+    optional string symbol = 4; // Instrument's symbol.
+    optional string secType = 5; // Asset type being monitored.
+    optional string exchange = 6; // Exchange where the symbol was traded.
+    optional string side = 7; // Determine if only Buy or Sell orders are returned.
+    optional int32 lastNDays = 8; // Number of previous days to receive trades for. Maximum 7.
+    repeated int32 specificDates = 9; // Retrieve a specific date within the past week to receive executions for. May be used with Time, but only the executions on the Specified Dates will return. Array formatted as [YYYYMMDD].
+}

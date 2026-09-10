@@ -1,0 +1,40 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "OrderStatusProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message OrderStatus {
+    optional int32 orderId = 1; // The API client's order id.
+    optional string status = 2; // Current status of the order.
+    optional string filled = 3; // Number of shares filled.
+    optional string remaining = 4; // The remaining shares of the order.
+    optional double avgFillPrice = 5; // Average execution price of shares in the order.
+    optional int64 permId = 6; // The Host order identifier.
+    optional int32 parentId = 7; // The order ID of the parent order, used for bracket and auto trailing stop orders.
+    optional double lastFillPrice = 8; // Price at which the last positions were filled.
+    optional int32 clientId = 9; // The API client id which placed the order.
+    optional string whyHeld = 10; // Indication of why an order was held.
+    optional double mktCapPrice = 11; // If an order has been capped, this indicates the current capped price.
+}

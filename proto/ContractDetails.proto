@@ -1,0 +1,107 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+import "IneligibilityReason.proto";
+
+option java_outer_classname = "ContractDetailsProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message ContractDetails {
+    optional string marketName = 1; // The market name for this product.
+    optional string minTick = 2; // The minimum allowed price variation. Note that many securities vary their minimum tick size according to their price. This value will only show the smallest of the different minimum tick sizes regardless of the product's price. Full information about the minimum increment price structure can be obtained with the reqMarketRule function or the IB Contract and Security Search site.
+    optional string orderTypes = 3; // Supported order types for this product.
+    optional string validExchanges = 4; // Valid exchange fields when placing an order for this contract.
+    optional int32 priceMagnifier = 5; // Price scaling indicating distinction of the market data or order prices against the traded currency. As an example, SHEL@LSE maintains a currency in Great British Pounds; however, quotes are displayed in Pence, so the displayed price is 100x (magnified) what an order is submitted as.  
+    optional int32 underConId = 6; // Underlying contract identifier for our derivative contract.
+    optional string longName = 7; // Descriptive name of the product.
+    optional string contractMonth = 8; // The contract month of the underlying for a Future contract.
+    optional string industry = 9; // The industry classification of the underlying/product.
+    optional string category = 10; // The industry category of the underlying.
+    optional string subcategory = 11; // The industry subcategory of the underlying.
+    optional string timeZoneId = 12; // The time zone for the trading hours of the product.
+    optional string tradingHours = 13; // The trading hours of the product. This value will contain the trading hours of the current day as well as the next's.
+    optional string liquidHours = 14; // The liquid hours of the product. This value will contain the liquid hours (regular trading hours) of the contract on the specified exchange. 
+    optional string evRule = 15; // Contains the Economic Value Rule name and the respective optional argument. The two values should be separated by a colon.
+    optional double evMultiplier = 16; // Tells you approximately how much the market value of a contract would change if the price were to change by 1. It cannot be used to get market value by multiplying the price by the approximate multiplier.
+    map<string, string> secIdList = 17; // A list of contract identifiers that the customer is allowed to view. CUSIP/ISIN/etc. For US stocks.
+    optional int32 aggGroup = 18; // Aggregated group Indicates the smart-routing group to which a contract belongs. contracts which cannot be smart-routed have aggGroup = -1.
+    optional string underSymbol = 19; // Underlying contract's symbol for our derivative contract.
+    optional string underSecType = 20; // Underlying contract's security type (STK, IND) for our derivative contract.
+    optional string marketRuleIds = 21; // The list of market rule IDs separated by comma Market rule IDs can be used to determine the minimum price increment at a given price.
+    optional string realExpirationDate = 22; // Expiration date for the contract in contrast to the last trading date.
+    optional string stockType = 23; // Stock type: Common, CORP, ADR, ETF, ETN, REIT, CEF, ETMF, EFN.
+    optional string minSize = 24; // Order's minimal size.
+    optional string sizeIncrement = 25; // Order's size increment.
+    optional string suggestedSizeIncrement = 26; // Order's suggested size increment.
+
+	// fund	fields
+    
+    optional string fundName = 27; // Fund's name.
+    optional string fundFamily = 28; // Fund's family.
+    optional string fundType = 29; // Fund's type.
+    optional string fundFrontLoad = 30; // Fund's front load.
+    optional string fundBackLoad = 31; // Fund's back load.
+    optional string fundBackLoadTimeInterval = 32; // Fund's back load time interval.
+    optional string fundManagementFee = 33; // Fund's management fee.
+    optional bool fundClosed = 34; // Fund closed flag.
+    optional bool fundClosedForNewInvestors = 35; // Fund closed for new investors flag.
+    optional bool fundClosedForNewMoney = 36; // Fund closed for new money flag.
+    optional string fundNotifyAmount = 37; // Fund's notify amount.
+    optional string fundMinimumInitialPurchase = 38; // Fund's minimum initial purchase.
+    optional string fundMinimumSubsequentPurchase = 39; // Minimum purchase for additional fund contracts.
+    optional string fundBlueSkyStates = 40; // Home state for the fund's Blue Sky filing.
+    optional string fundBlueSkyTerritories = 41; // Home territory for the fund's Blue Sky filing.
+    optional string fundDistributionPolicyIndicator = 42; // Fund's distribution policy indicator.
+    optional string fundAssetType = 43; // Fund's asset type.
+
+	// bond fields
+
+    optional string cusip = 44; // The nine-character bond CUSIP. For Bonds only. Receiving CUSIPs requires a CUSIP market data subscription.
+    optional string issueDate = 45; // The date the bond was issued. This field is currently not available from the TWS API. For Bonds only. Not currently implemented due to bond market data restrictions.
+    optional string ratings = 46; // Identifies the credit rating of the issuer. This field is not currently available from the TWS API. For Bonds only. A higher credit rating generally indicates a less risky investment. Bond ratings are from Moody's and S&P respectively. Not currently implemented due to bond market data restrictions.
+    optional string bondType = 47; // The type of bond.
+    optional double coupon = 48; // The interest rate used to calculate the amount you will receive in interest payments over the course of the year. This field is currently not available from the TWS API. For Bonds only.
+    optional string couponType = 49; // The type of bond coupon. This field is currently not available from the TWS API. For Bonds only.
+    optional bool convertible = 50; // Indicates a debt instrument that can be converted into stock (equity) at a predetermined time at the discretion of the bondholder.
+    optional bool callable = 51; // Indicates a debt security that lets the issuer buy back or redeem the principal before the scheduled maturity date.
+    optional bool puttable = 52; // Indicates a debt security that lets the bondholder require the issuer to repurchase the bond at specified dates before its maturity.
+    optional string descAppend = 53; // A description string containing further descriptive information about the bond. For Bonds only.
+    optional string nextOptionDate = 54; // Only if bond has embedded options. This field is currently not available from the TWS API. Refers to callable bonds and puttable bonds. Available in TWS description window for bonds.
+    optional string nextOptionType = 55; // Type of embedded option. This field is currently not available from the TWS API. Only if bond has embedded options.
+    optional bool nextOptionPartial = 56; // Only if bond has embedded options. This field is currently not available from the TWS API. For Bonds only.
+    optional string bondNotes = 57; // Additional context regarding bond behavior.
+
+    repeated IneligibilityReason ineligibilityReasonList = 58; // List of details why the account cannot trade the given security.
+
+    // event contract fields
+
+    optional string eventContract1 = 59; // Event Contract's topic.
+    optional string eventContractDescription1 = 60; // Event contract's strike, expiry, and right.
+    optional string eventContractDescription2 = 61; // Complete event contract question.
+
+    optional string minAlgoSize = 62; // Smallest order quantity for an algorithmic order.
+    optional string lastPricePrecision = 63; // Decimal level rounding for the contract.
+    optional string lastSizePrecision = 64; // Floating point rounding for order sizes.
+    optional string settlementMethod = 65; // How a product may settle on expiry. Supports "Physical" and "Cash".
+}

@@ -1,0 +1,50 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "ExecutionProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message Execution {
+    optional int32 orderId = 1; // The API client's order Id. May not be unique to an account.
+    optional string execId = 2; // The execution's identifier. Each partial fill has a separate ExecId. A correction is indicated by an ExecId which differs from a previous ExecId in only the digits after the final period.
+    optional string time = 3; // The execution's server time.
+    optional string acctNumber = 4; // The account to which the order was allocated.
+    optional string exchange = 5; // The exchange where the execution took place.
+    optional string side = 6; // Specifies if the transaction was buy or sale BOT for bought.
+    optional string shares = 7; // The number of shares filled.
+    optional double price = 8; // The order's execution price excluding commissions.
+    optional int64 permId = 9; // The TWS order identifier. The PermId can be 0 for trades originating outside IB.
+    optional int32 clientId = 10; // The API client identifier which placed the order which originated this execution.
+    optional bool isLiquidation = 11; // Indicates the order was triggered as an IB Liquidation.
+    optional string cumQty = 12; // Cumulative quantity. Used in regular trades.
+    optional double avgPrice = 13; // Average price. Used in regular trades.
+    optional string orderRef = 14; // The OrderRef is a user-customizable string that can be set from the API or TWS and will be associated with an order for its lifetime.
+    optional string evRule = 15; // The Economic Value Rule name and the respective optional argument. The two values should be separated by a colon. 
+    optional double evMultiplier = 16; // Tells you approximately how much the market value of a contract would change if the price were to change by 1. It cannot be used to get market value by multiplying the price by the approximate multiplier.
+    optional string modelCode = 17; // Identifier of the financial advisor's model.
+    optional int32 lastLiquidity = 18; // The liquidity type of the execution.
+    optional bool isPriceRevisionPending = 19; // Indicates the price the order executed as may be changed.
+    optional string submitter = 20; // Username that placed the executing order.
+    optional int32 optExerciseOrLapseType = 21; // Flags the type of exercise that traded the order.
+}

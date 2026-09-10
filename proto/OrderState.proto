@@ -1,0 +1,64 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+import "OrderAllocation.proto";
+
+option java_outer_classname = "OrderStateProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message OrderState {
+    optional string status = 1; // The order's current status.
+    optional double initMarginBefore = 2; // The account's current initial margin.
+    optional double maintMarginBefore = 3; // The account's current maintenance margin.
+    optional double equityWithLoanBefore = 4; // The account's current equity with loan.
+    optional double initMarginChange = 5; // The change of the account's initial margin.
+    optional double maintMarginChange = 6; // The change of the account's maintenance margin.
+    optional double equityWithLoanChange = 7; // The change of the account's equity with loan.
+    optional double initMarginAfter = 8; // The order's impact on the account's initial margin.
+    optional double maintMarginAfter = 9; // The order's impact on the account's maintenance margin.
+    optional double equityWithLoanAfter = 10; // Shows the impact the order would have on the account's equity with loan.
+
+    optional double commissionAndFees = 11; // Additional order cost for fees and commissions.
+    optional double minCommissionAndFees = 12; // Lowest possible commission and fee value for the order.
+    optional double maxCommissionAndFees = 13; // Highest possible commission and fee value for the order.
+    optional string commissionAndFeesCurrency = 14; // Type of currency representing commissions and fee values.
+    optional string marginCurrency = 15; // Type of currency representing margin values.
+
+    optional double initMarginBeforeOutsideRTH = 16; // The account's expected initial margin outside of regular trading hours.
+    optional double maintMarginBeforeOutsideRTH = 17; // The account's expected maintenance margin outside of regular trading hours.
+    optional double equityWithLoanBeforeOutsideRTH = 18; // The account's expected equity with loan outside of regular trading hours.
+    optional double initMarginChangeOutsideRTH = 19; // The expected change of the account's initial margin outside of regular trading hours.
+    optional double maintMarginChangeOutsideRTH = 20; // The expected change of the account's maintenance margin outside of regular trading hours.
+    optional double equityWithLoanChangeOutsideRTH = 21; // The expected change of the account's equity with loan outside of regular trading hours.
+    optional double initMarginAfterOutsideRTH = 22; // The order's expected impact on the account's initial margin outside of regular trading hours.
+    optional double maintMarginAfterOutsideRTH = 23; // The order's expected impact on the account's maintenance margin outside of regular trading hours.
+    optional double equityWithLoanAfterOutsideRTH = 24; // Shows the expected impact the order would have on the account's equity with loan outside of regular trading hours.
+
+    optional string suggestedSize = 25; // Suggested size of the order based on account balances. 
+    optional string rejectReason = 26; // Audit trail details for why the order was rejected. 
+    repeated OrderAllocation orderAllocations = 27; // Proto object containing order allocation behaviors.
+    optional string warningText = 28; // If the order is warranted, a descriptive message will be provided.
+    optional string completedTime = 29; // Time when the order was completed.
+    optional string completedStatus = 30; // The current status of the order. Supports "Inactive", "PendingSubmit", "PreSubmitted", "Submitted", "Filled", "PendingCancel", "PreCancelled", "Cancelled", "WarnState".
+}

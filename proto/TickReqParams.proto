@@ -1,0 +1,35 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "TickReqParamsProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message TickReqParams {
+    optional int32 reqId = 1; // Unique request identifier used for tracking across EWrapper.
+	optional string minTick = 2; // Minimum number of ticks returned.
+	optional string bboExchange = 3; // Identifier for the exchange with the best bid and offer.
+    optional int32 snapshotPermissions = 4; // Market data permissions to retrieve instrument data.
+	optional string lastPricePrecision = 5; // The decimal precision for supported prices.
+	optional string lastSizePrecision = 6; // The decimal precision supported for order sizes.
+}

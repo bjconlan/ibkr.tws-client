@@ -1,0 +1,40 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "TickOptionComputationProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message TickOptionComputation {
+    optional int32 reqId = 1; // Unique request identifier used for tracking across EWrapper.
+    optional int32 tickType = 2; // Type of data the tick represents.
+    optional int32 tickAttrib = 3; // Defines TickAttrib.canAutoExecute.
+    optional double impliedVol = 4; // Implied volatility of the Option.
+    optional double delta = 5; // The stock's Delta. For orders on BOX only.
+    optional double optPrice = 6; // The option price.
+    optional double pvDividend = 7; // The present value of dividends expected on the option's underlying.
+    optional double gamma = 8; // The option Gamma value.
+    optional double vega = 9; // Option greek Vega.
+    optional double theta = 10; // Option Greek Theta.
+    optional double undPrice = 11; // Current price of the underlying contract.
+}

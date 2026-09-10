@@ -1,0 +1,37 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+option java_outer_classname = "HistoricalDataBarProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message HistoricalDataBar {
+	optional string date = 1; // The start date of the bar's covered data.
+    optional double open = 2; // The bar's open price.
+    optional double high = 3; // The bar's high price.
+    optional double low = 4; // The bar's low price.
+    optional double close = 5; // The bar's close price.
+	optional string volume = 6; // The bar's traded volume if available (only available for TRADES).
+	optional string WAP = 7; // The bar's Weighted Average Price (only available for TRADES).
+    optional int32 barCount = 8; // The number of trades that took place through the course of trading.
+}

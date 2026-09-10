@@ -1,0 +1,41 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+import "Contract.proto";
+
+option java_outer_classname = "HistoricalDataRequestProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message HistoricalDataRequest {
+    optional int32 reqId = 1; // Unique request identifier used for tracking across EWrapper.
+	optional Contract contract = 2; // Contract object containing defining characteristics for ticker.
+	optional string endDateTime = 3; // The request's end date and time. This should be formatted as "YYYYMMDD HH:mm:ss TMZ" or an empty string indicates current present moment.
+	optional string barSizeSetting = 4; // The data’s granularity or Valid Bar Sizes.
+	optional string duration = 5; // Specifies the number of seconds the order should remain active. For GTD orders only. Users that would prefer to specify an exact date should user the "GoodTillDate" parameter instead. Both values cannot be specified at the same time.
+	optional bool useRTH = 6; // Declare that the request should only include Regular Trading Hours. Extended trading hours will be excluded.
+	optional string whatToShow = 7; // Data source type.
+    optional int32 formatDate = 8; // Using 1 will return UTC time in YYYYMMDD-hh:mm:ss format. Using 2 will return epoch time.
+	optional bool keepUpToDate = 9; // true indicates that historical data should be continuously delivered to EWrapper.HistoricalDataUpdate.
+    map<string, string> chartOptions = 10; // This is a field used exclusively for internal use.
+}

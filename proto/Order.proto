@@ -1,0 +1,258 @@
+/*
+ * Protobuf TWS API
+ *
+ * Copyright (C) 2013-2026  Interactive Brokers LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package protobuf;
+
+import "OrderCondition.proto";
+import "SoftDollarTier.proto";
+
+option java_outer_classname = "OrderProto";
+option java_package = "io.github.bjc.ibkr.proto";
+option csharp_namespace = "IBApi.protobuf";
+
+message Order {
+
+    // order ids
+
+    optional int32 clientId = 1; // The API client id which placed the order.
+    optional int32 orderId = 2; // The API client's order id.
+    optional int64 permId = 3; // The Host order identifier.
+    optional int32 parentId = 4; // The order ID of the parent order, used for bracket and auto trailing stop orders.
+
+    // primary attributes
+
+    optional string action = 5; // Identifies the side. Supports BUY and SELL. IBExecution accounts may submit SSHORT and SLONG to denote an order as a short or long position.
+    optional string totalQuantity = 6; // The number of positions being bought/sold.
+    optional int32 displaySize = 7; // The publicly disclosed order size.
+    optional string orderType = 8; // The order's type.
+    optional double lmtPrice = 9; // The limit price used for the order.
+    optional double auxPrice = 10; // Generic field to contain the stop price for STP LMT orders, trailing amount, etc.
+    optional string tif = 11; // The time in force. Valid values are: DAY – Valid for the day only. GTC – Good until canceled. The order will continue to work within the system and in the marketplace until it executes or is canceled. GTC orders will be automatically be cancelled under the following conditions: If a corporate action on a security results in a stock split (forward or reverse).
+
+    // clearing info
+
+    optional string account = 12; // The IBKR account identifier to affiliate the request with.
+    optional string settlingFirm = 13; // Indicates the firm which will settle the trade. Institutions only.
+    optional string clearingAccount = 14; // Specifies the true beneficiary of the order. For IBExecution customers. This value is required for FUT/FOP orders for reporting to the exchange.
+    optional string clearingIntent = 15; // For execution-only clients to know where do they want their shares to be cleared at. Valid values are: IB.
+
+    // secondary attributes
+
+    optional bool allOrNone = 16; // Indicates whether or not all the order has to be filled on a single execution.
+    optional bool blockOrder = 17; // If set to true, flags the order as a Block Order. A Block Order is a large volume limit order with a minimum of 50 contracts. 
+    optional bool hidden = 18; // If set to true, the order will not be visible when viewing the market depth. This option only applies to orders routed to the NASDAQ exchange.
+    optional bool outsideRth = 19; // If set to true, allows orders to also trigger or fill outside of regular trading hours.
+    optional bool sweepToFill = 20; // An order that identifies the best price and the exact quantity offered/available at the price, and transmits the corresponding portion of your order for immediate execution. Simultaneously it is identifying the next best price and quantity offered/available, and submits the matching quantity of your order for immediate execution.
+    optional double percentOffset = 21; // The percent offset amount for relative orders.
+    optional double trailingPercent = 22; // Specifies the trailing amount of a trailing stop order as a percentage. Observe the following guidelines when using the trailingPercent field: Guidelines * This field is mutually exclusive with the existing trailing amount. That is, the API client can send one or the other but not both. * This field is read AFTER the stop price (barrier price) as follows: deltaNeutralAuxPrice stopPrice, trailingPercent, scale order attributes. * The field will also be sent to the API in the openOrder message if the API client version is >= 56. It is sent after the stopPrice field as follows: stopPrice, trailingPct, basisPoint.
+    optional double trailStopPrice = 23; // Trail stop price for TRAIL LIMIT orders.
+    optional int32 minQty = 24; // Identifies a minimum quantity order type.
+    optional string goodAfterTime = 25; // Specifies the date and time after which the order will be active. Format: yyyymmdd hh:mm:ss {optional Timezone}.
+    optional string goodTillDate = 26; // The date and time when the order should cancel if not already filled. Only valid for orders using the "GTD" tif. Users that would prefer to specify a number of seconds should use the Duration parameter instead. Both values cannot be specified at the same time.
+    optional string ocaGroup = 27; // One-Cancels-All group identifier.
+    optional string orderRef = 28; // The custom order identifer.
+    optional string rule80A = 29; // Individual = 'I' Agency = 'A' AgentOtherMember = 'W' IndividualPTIA = 'J' AgencyPTIA = 'U' AgentOtherMemberPTIA = 'M' IndividualPT = 'K' AgencyPT = 'Y' AgentOtherMemberPT = 'N'.
+    optional int32 ocaType = 30; // Tells how to handle remaining orders in an OCA group when one order or part of an order executes. Valid values are: 1 – Cancel all remaining orders with block. 2 – Remaining orders are proportionately reduced in size with block. 3 – Remaining orders are proportionately reduced in size with no block. If you use a value "with block" it gives the order overfill protection. This means that only one order in the group will be routed at a time to remove the possibility of an overfill.
+    optional int32 triggerMethod = 31; // Defines how a stop order should trigger. Supported Trigger Methods: {0: "Default", 1: "Double Bid/Ask", 2: "Last", 3: "Double Last", 4: "Bid/Ask", 7: "Last or Bid/Ask", 8: "Mid-point"}.
+
+    // extended order fields
+
+    optional string activeStartTime = 32; // Defines the start time of GTC orders.
+    optional string activeStopTime = 33; // Defines the stop time of GTC orders.
+
+    // advisor allocation orders
+
+    optional string faGroup = 34; // The Financial Advisor group the trade will be allocated to. Use an empty string if not applicable.
+    optional string faMethod = 35; // The Financial Advisor allocation method the trade will be allocated to. Use an empty string if not applicable.
+    optional string faPercentage = 36; // The Financial Advisor percentage concerning the trade's allocation. Use an empty string if not applicable.
+
+    // volatility orders
+
+    optional double volatility = 37; // The implied volatility to use for calculating the option price.
+    optional int32 volatilityType = 38; // Values include: 1 – Daily Volatility 2 – Annual Volatility.
+    optional bool continuousUpdate = 39; // Specifies whether TWS will automatically update the limit price of the order as the underlying price moves. VOL orders only.
+    optional int32 referencePriceType = 40; // Specifies how you want TWS to calculate the limit price for options.
+    optional string deltaNeutralOrderType = 41; // Enter an order type to instruct TWS to submit a delta neutral trade on full or partial execution of the VOL order. VOL orders only.
+    optional double deltaNeutralAuxPrice = 42; // Use this field to enter a value if the value in the deltaNeutralOrderType field is an order type that requires an Aux price.
+    optional int32 deltaNeutralConId = 43; // The unique contract identifier specifying the security in Delta Neutral order.
+    optional string deltaNeutralOpenClose = 44; // Specifies whether the order is an Open or a Close order and is used when the hedge involves a CFD and and the order is clearing away.
+    optional bool deltaNeutralShortSale = 45; // Used when the hedge involves a stock and indicates whether or not it is sold short.
+    optional int32 deltaNeutralShortSaleSlot = 46; // Indicates a short sale Delta Neutral order. Has a value of 1 (the clearing broker holds shares) or 2 (delivered from a third party). 
+    optional string deltaNeutralDesignatedLocation = 47; // Identifies third party order origin. Used only when deltaNeutralShortSaleSlot = 2.
+
+    // scale orders
+
+    optional int32 scaleInitLevelSize = 48; // Defines the size of the first order to be scaled.
+    optional int32 scaleSubsLevelSize = 49; // Defines the order size of the subsequent scale order components. For Scale orders only. Used in conjunction with scaleInitLevelSize().
+    optional double scalePriceIncrement = 50; // Defines the price increment between scale components. For Scale orders only. This value is compulsory.
+    optional double scalePriceAdjustValue = 51; // Modifies the value of the Scale order. For extended Scale orders.
+    optional int32 scalePriceAdjustInterval = 52; // Specifies the interval when the price is adjusted. For extended Scale orders.
+    optional double scaleProfitOffset = 53; // Specifies the offset when to adjust profit. For extended scale orders.
+    optional bool scaleAutoReset = 54; // Restarts the Scale series if the order is cancelled. For extended scale orders.
+    optional int32 scaleInitPosition = 55; // The initial position of the Scale order. For extended scale orders.
+    optional int32 scaleInitFillQty = 56; // Specifies the initial quantity to be filled. For extended scale orders.
+    optional bool scaleRandomPercent = 57; // Defines the random percent by which to adjust the position. For extended scale orders.
+    optional string scaleTable = 58; // The list of scale orders. Used for scale orders.
+
+    // hedge orders
+
+    optional string hedgeType = 59; // For hedge orders. Possible values include: D – Delta B – Beta F – FX P – Pair.
+    optional string hedgeParam = 60; // For hedge orders. Beta x for Beta hedge orders.
+
+    // algo orders
+
+    optional string algoStrategy = 61; // The algorithm strategy. ArrivalPx – Arrival Price DarkIce – Dark Ice PctVol – Percentage of Volume Twap – TWAP (Time Weighted Average Price) Vwap – VWAP (Volume Weighted Average Price).
+    map<string, string> algoParams = 62; // The list of parameters for the IB algorithm.
+    optional string algoId = 63; // Identifies orders generated by algorithmic trading.
+
+    // combo orders
+
+    map<string, string> smartComboRoutingParams = 64; // Hash map to define how the combination of orders should route. 
+
+    // processing control
+
+    optional bool whatIf = 65; // Allows to retrieve the commissions and margin information without submitting an order.
+    optional bool transmit = 66; // Specifies whether the order will be transmitted by TWS. If set to false, the order will be created at TWS but will not be sent. Users implementing directly from Protobuf should be aware that Transmit should be implicitly set to 'true' when placing orders to transmit an order.
+    optional bool overridePercentageConstraints = 67; // Overrides TWS price constraints. Precautionary constraints are defined on the TWS Presets page.
+
+    // Institutional orders only
+
+    optional string openClose = 68; // For institutional customers only. Valid values are O (open) and C (close). Available for institutional clients to determine if this order is to open or close a position. When Action = "BUY" and OpenClose = "O" this will open a new position. When Action = "BUY" and OpenClose = "C" this will close and existing short position.
+    optional int32 origin = 69; // The order's origin. Same as TWS "Origin" column. Identifies the type of customer from which the order originated. Valid values are:0 – Customer 1 – Firm.
+    optional int32 shortSaleSlot = 70; // For institutions only. Valid values are: 1 – Broker holds shares 2 – Shares come from elsewhere.
+    optional string designatedLocation = 71; // For institutions only. Indicates the location where the shares to short come from. Used only when short sale slot is set to 2 (which means that the shares to short are held elsewhere and not with IB).
+    optional int32 exemptCode = 72; // Only available with IB Execution-Only accounts with applicable securities. Mark order as exempt from short sale uptick rule.
+    optional string deltaNeutralSettlingFirm = 73; // Indicates the firm which will settle the Delta Neutral trade. Institutions only.
+    optional string deltaNeutralClearingAccount = 74; // Specifies the beneficiary of the Delta Neutral order.
+    optional string deltaNeutralClearingIntent = 75; // Specifies where the clients want their shares to be cleared at. Must be specified by execution-only clients. Valid values are: IB.
+
+    // SMART routing only
+
+    optional double discretionaryAmt = 76; // The amount off the limit price allowed for discretionary orders.
+    optional bool optOutSmartRouting = 77; // Use to opt out of default SmartRouting for orders routed directly to ASX. This attribute defaults to false unless explicitly set to true. 
+
+    // BOX ORDERS ONLY
+
+    optional double startingPrice = 78; // The auction's starting price. For BOX orders only.
+    optional double stockRefPrice = 79; // The stock's reference price. The reference price is used for VOL orders to compute the limit price sent to an exchange (whether or not Continuous Update is selected).
+    optional double delta = 80; // The stock's Delta. For orders on BOX only.
+
+    // pegged to stock or VOL orders
+
+    optional double stockRangeLower = 81; // The lower value for the acceptable underlying stock price range. For price improvement option orders on BOX and VOL orders with dynamic management.
+    optional double stockRangeUpper = 82; // The upper value for the acceptable underlying stock price range. For price improvement option orders on BOX and VOL orders with dynamic management.
+
+    // Not Held
+
+    optional bool notHeld = 83; // Orders routed to IBDARK are tagged as "post only" and are held in IB's order book.
+
+    // order misc options
+
+    map<string, string> orderMiscOptions = 84; // For internal use only. Use the default value XYZ.
+
+    //order algo id
+
+    optional bool solicited = 85; // The Solicited field should be used for orders initiated or recommended by the broker or adviser that were approved by the client (by phone, email, chat, verbally, etc.) prior to entry. Please note that orders that the adviser or broker placed without specifically discussing with the client are discretionary orders, not solicited.
+
+    optional bool randomizeSize = 86; // Randomizes the order's size. Only for Volatility and Pegged to Volatility orders.
+    optional bool randomizePrice = 87; // Randomizes the order's price. Only for Volatility and Pegged to Volatility orders.
+
+    // PEG2BENCH fields
+
+    optional int32 referenceContractId = 88; // Pegged-to-benchmark orders: this attribute will contain the conId of the contract against which the order will be pegged.
+    optional double peggedChangeAmount = 89; // Pegged-to-benchmark orders: amount by which the order's pegged price should move.
+    optional bool isPeggedChangeAmountDecrease = 90; // Pegged-to-benchmark orders: indicates whether the order's pegged price should increase or decreases.
+    optional double referenceChangeAmount = 91; // Pegged-to-benchmark orders: the amount the reference contract needs to move to adjust the pegged order.
+    optional string referenceExchangeId = 92; // Pegged-to-benchmark orders: the exchange identifer for the contract pegged to.
+    optional string adjustedOrderType = 93; // Adjusted Stop orders: the parent order will be adjusted to the given type when the adjusted trigger price is penetrated.
+    optional double triggerPrice = 94; // Adjusted Stop orders: specifies the trigger price to execute.
+    optional double adjustedStopPrice = 95; // Adjusted Stop orders: specifies the stop price of the adjusted (STP) parent.
+    optional double adjustedStopLimitPrice = 96; // Adjusted Stop orders: specifies the stop limit price of the adjusted (STPL LMT) parent.
+    optional double adjustedTrailingAmount = 97; // Adjusted Stop orders: specifies the trailing amount of the adjusted (TRAIL) parent.
+    optional int32 adjustableTrailingUnit = 98; // Adjusted Stop orders: specifies where the trailing unit is an amount (set to 0) or a percentage (set to 1).
+    optional double lmtPriceOffset = 99; // Adjusted Stop orders: specifies the price offset for the stop to move in increments.
+
+    repeated OrderCondition conditions = 100; // Conditions determining when the order will be activated or canceled.
+    optional bool conditionsCancelOrder = 101; // Conditions can determine if an order should become active or canceled.
+    optional bool conditionsIgnoreRth = 102; // Indicates whether or not conditions will also be valid outside Regular Trading Hours.
+
+    // models
+
+    optional string modelCode = 103; // Financial advisor model portfolio code identifier. Individual accounts should pass an empty string.
+
+    optional string extOperator = 104; // Following CME Rule 576, the ExtOperator field will signify if the unique API operator at the time of trading for order management.
+
+    optional SoftDollarTier softDollarTier = 105;
+
+    // native cash quantity
+
+    optional double cashQty = 106; // The native cash quantity.
+
+    optional string mifid2DecisionMaker = 107; // Identifies a person as the responsible party for investment decisions within the firm. Orders covered by MiFID 2 (Markets in Financial Instruments Directive 2) must include either Mifid2DecisionMaker or Mifid2DecisionAlgo field (but not both).
+    optional string mifid2DecisionAlgo = 108; // Identifies the algorithm responsible for investment decisions within the firm. Orders covered under MiFID 2 must include either Mifid2DecisionMaker or Mifid2DecisionAlgo.
+    optional string mifid2ExecutionTrader = 109; // For MiFID 2 reporting; identifies a person as the responsible party for the execution of a transaction within the firm. 
+    optional string mifid2ExecutionAlgo = 110; // For MiFID 2 reporting; identifies the algorithm responsible for the execution of a transaction within the firm.
+
+    // don't use auto price for hedge
+
+    optional bool dontUseAutoPriceForHedge = 111; // Don't use automatic pricing for hedge orders.
+
+    optional bool isOmsContainer = 112; // Set to true to create tickets from API orders when TWS is used as an OMS.
+    optional bool discretionaryUpToLimitPrice = 113; // Set to true to convert order of type 'Primary Peg' to 'D-Peg'.
+
+    optional string autoCancelDate = 114; // Specifies the date to auto cancel the order.
+    optional string filledQuantity = 115; // Specifies the initial order quantity to be filled.
+    optional int32 refFuturesConId = 116; // Identifies the reference future conId.
+    optional bool autoCancelParent = 117; // Cancels the parent order if child order was cancelled.
+    optional string shareholder = 118; // Identifies the Shareholder.
+    optional bool imbalanceOnly = 119; // Used to specify "imbalance only open orders" or "imbalance only closing orders".
+    optional int32 routeMarketableToBbo = 120; // Routes market order to Best Bid Offer.
+    optional int64 parentPermId = 121; // Parent's permanent order Id.
+
+    optional int32 usePriceMgmtAlgo = 122; // Specifies wether to use Price Management Algo. CTCI users only.
+    optional int32 duration = 123; // Specifies the number of seconds the order should remain active. For GTD orders only. Users that would prefer to specify an exact date should user the "GoodTillDate" parameter instead. Both values cannot be specified at the same time.
+    optional int32 postToAts = 124; // List your order on the IBKR Alternative Trading System.
+    optional string advancedErrorOverride = 125; // Accepts a string with parameters obtained from advancedOrderRejectJson.
+    optional string manualOrderTime = 126; // Used by brokers and advisors when manually entering an order request. Format should be "YYYYMMDD-HH:mm:ss" using UTC as the timezone value.
+    optional int32 minTradeQty = 127; // Defines the minimum trade quantity to fill. For IBKRATS orders.
+    optional int32 minCompeteSize = 128; // Defines the minimum size to compete. For IBKRATS orders.
+    optional double competeAgainstBestOffset = 129; // Specifies the offset Off The Midpoint that will be applied to the order. For IBKRATS orders.
+    optional double midOffsetAtWhole = 130; // This offset is applied when the spread is an even number of cents wide. This offset must be in whole-penny increments or zero. For IBKRATS orders.
+    optional double midOffsetAtHalf = 131; // This offset is applied when the spread is an odd number of cents wide. This offset must be in half-penny increments. For IBKRATS orders.
+    optional string customerAccount = 132; // Required for Nondisclosed Omnibus Accounts. A unique identifier for each account within the Omnibus structure to signify the account holder being traded. Best practice (Not Required): clients should look to hash this value, using something along the lines of 5 digits of SHA1 of the account number. This should not be implemented for non-omnibus accounts.
+    optional bool professionalCustomer = 133; // Identify the order as a full time, professional trader.
+    optional string bondAccruedInterest = 134; // Defines the interest acrrual of the bond.
+    optional bool includeOvernight = 135; // Specify if the order should include overnight trading or not. False (no Overnight) is set by default.
+    optional int32 manualOrderIndicator = 136; // Following CME Rule 576, the ManualOrderIndicator field will signify if an order is manual (1) or automated (0).
+    optional string submitter = 137; // Define the user that submitted the order.
+    optional bool deactivate = 138; // Determines if the order is Active (False) or Deactivated (True). Orders that are deactivated are not submitted and will not execute, though they can be reviewed and transmitted via API, Trader Workstation, or Client Portal. This is unique from the Transmit field as orders submitted as Transmit=False will not leave the current TWS instance, and will be erased upon logout. Deactivated orders will persist internally at Interactive Brokers.
+    optional bool postOnly = 139; // If set to true, when there is non-displayed liquidity at the same price point, the order price is adjusted low (for a buy) or higher (for a sell) by one penny to avoid taking that liquidity. If the order comes in at a price higher (for a buy) or lower (for a sell) than an order already sitting on the book, it becomes an IOC (immediate-or-cancel) order at the better price.
+    optional bool allowPreOpen = 140; // Set to true to allow orders to participate in the pre-open session from 4:00 - 9:30 am.
+    optional bool ignoreOpenAuction = 141; // Set to true ignore the opening auction.
+    optional int32 seekPriceImprovement = 142; // Set to true to seek a better price than that submitted with the order.
+    optional int32 whatIfType = 143; // {0: Full order check, 1: Check margin requirements of the order, 2: Internal use only., 3: Projected destination for auto-routing. Internal use only., 4: Disregards trading hours. Internal use only., 7: Records display of Japan mutual fund prospectus. Internal use only., 8: Commission-only calculation. Internal use only. }.
+    
+    // hedge orders
+
+    optional int32 hedgeMaxSize = 144; // hedgeMaxSize (also referred to as "Max Hedging Size") is a user-supplied parameter that caps the maximum number of shares that can be shorted in a beta hedge child order. It provides an upper bound for risk and credit assessment purposes. Applied only to beta hedge orders (sell side only) for stocks in IB- cleared accounts.
+
+    optional bool conditionsIncludeOvernight = 145; // Declares that order conditions should be followed when includeOvernight=True.
+}
