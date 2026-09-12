@@ -61,6 +61,18 @@ starting one:
 IBKR_SMOKE=true IBKR_GATEWAY_PORT=4002 mvn test -Dtest=GatewaySmokeTest
 ```
 
+`PaperOrderTest` is an opt-in order lifecycle probe against a **non-read-only** paper gateway
+(a container started with `READ_ONLY_API=no`). It resolves FMG on ASX, places a small resting
+limit buy (about A$3000), checks the order status and open order, then cancels it:
+
+```sh
+IBKR_ORDER=true IBKR_GATEWAY_PORT=4002 mvn test -Dtest=PaperOrderTest
+```
+
+Note that `ContractDetails.minTick` is the smallest tick across all price bands (0.001 for ASX
+stocks), not the tick for the current price; FMG trades in 0.01 increments, so the probe picks
+that explicitly. Use `reqMarketRule` if you need the full schedule.
+
 Environment overrides: `IBKR_GATEWAY_HOST` (default `127.0.0.1`), `IBKR_GATEWAY_PORT`
 (default `4002`), `IBKR_CLIENT_ID` (default `99`). Market data may still be refused with
 error `10197` when another session is live.
