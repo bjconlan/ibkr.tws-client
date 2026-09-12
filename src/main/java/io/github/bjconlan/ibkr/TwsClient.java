@@ -199,9 +199,13 @@ public final class TwsClient implements AutoCloseable {
         releaseMarketData(reqId);
     }
 
+    /**
+     * Requests historical bars. Parameter order mirrors the upstream {@code EClient}:
+     * {@code endDateTime, duration, barSizeSetting, whatToShow, useRTH, formatDate, keepUpToDate}.
+     */
     public void reqHistoricalData(int reqId, ContractProto.Contract contract, String endDateTime,
-                                  String barSizeSetting, String duration, boolean useRTH,
-                                  String whatToShow, int formatDate, boolean keepUpToDate) {
+                                  String duration, String barSizeSetting, String whatToShow,
+                                  boolean useRTH, int formatDate, boolean keepUpToDate) {
         String contractScope = "%s|%s".formatted(fingerprint(contract), whatToShow);
         String request = "%s|%s|%s|%s|%b|%d".formatted(
                 contractScope, endDateTime, barSizeSetting, duration, useRTH, formatDate);

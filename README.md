@@ -130,8 +130,9 @@ public final class MarketDataDemo {
 
         try (TwsClient client = new TwsClient(config, MarketDataDemo::render)) {
             client.connect();
+            client.setMarketDataType(3);   // delayed; paper accounts usually lack live entitlements
             client.reqMktData(1, aapl, "", false, false);
-            client.reqHistoricalData(2, aapl, "", "1 D", "5 mins", true, "TRADES", 1, false);
+            client.reqHistoricalData(2, aapl, "", "1 D", "5 mins", "TRADES", true, 1, false);
 
             Thread.sleep(30_000);   // events arrive on the dispatcher thread
             client.cancelMktData(1);
@@ -173,8 +174,8 @@ virtual threads:
 
 ```java
 try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-    executor.submit(() -> client.reqHistoricalData(1, aapl, "", "1 D", "5 mins", true, "TRADES", 1, false));
-    executor.submit(() -> client.reqHistoricalData(2, aapl, "", "1 W", "1 hour", true, "TRADES", 1, false));
+    executor.submit(() -> client.reqHistoricalData(1, aapl, "", "1 D", "5 mins", "TRADES", true, 1, false));
+    executor.submit(() -> client.reqHistoricalData(2, aapl, "", "1 W", "1 hour", "TRADES", true, 1, false));
 }
 ```
 

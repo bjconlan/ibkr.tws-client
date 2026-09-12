@@ -49,8 +49,9 @@ public final class MarketDataDemo {
         EventHandler handler = MarketDataDemo::render;
         try (TwsClient client = new TwsClient(config, handler)) {
             client.connect();
+            client.setMarketDataType(3);   // delayed data; paper accounts usually lack live entitlements
             client.reqMktData(1, aapl, "", false, false);
-            client.reqHistoricalData(2, aapl, "", "1 D", "5 mins", true, "TRADES", 1, false);
+            client.reqHistoricalData(2, aapl, "", "1 D", "5 mins", "TRADES", true, 1, false);
 
             // The callback runs on a virtual dispatcher thread; block here for a while.
             Thread.sleep(30_000);
