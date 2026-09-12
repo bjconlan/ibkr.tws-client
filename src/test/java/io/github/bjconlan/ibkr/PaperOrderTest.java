@@ -122,6 +122,80 @@ class PaperOrderTest {
         }
     }
 
+    @Test
+    void marketableOrderBehaviourWhileAsxIsClosed() throws Exception {
+        BlockingQueue<IbEvent> events = new LinkedBlockingQueue<>();
+        TwsConfig config = new TwsConfig(host(), port(), clientId(), "", Duration.ofSeconds(10), 2,
+                Duration.ofMillis(500), 100);
+
+        try (TwsClient client = new TwsClient(config, events::add)) {
+            client.connect();
+            ManagedAccountsProto.ManagedAccounts accounts = await(events, ManagedAccountsProto.ManagedAccounts.class, 10);
+            String account = accounts.getAccountsList().split(",")[0];
+            int orderId = await(events, NextValidIdProto.NextValidId.class, 10).getOrderId();
+
+            client.reqContractDetails(1, fmg());
+            ContractDataProto.ContractData data = await(events, ContractDataProto.ContractData.class, 30);
+            ContractProto.Contract contract = data.getContract();
+            System.out.printf("timeZone=%s tradingHours=%s%n",
+                    data.getContractDetails().getTimeZoneId(), data.getContractDetails().getTradingHours());
+            await(events, ContractDataEndProto.ContractDataEnd.class, 30);
+
+            int quantity = 5;
+            double price = 16.67;
+            double limit = Math.round(price * 1.10 * 100.0) / 100.0;
+            System.out.printf("placing marketable BUY LMT %d @ %.2f (outsideRth)%n", quantity, limit);
+            client.placeOrder(orderId, contract, OrderProto.Order.newBuilder()
+                    .setAction("BUY").setOrderType("LMT")
+                    .setTotalQuantity(Integer.toString(quantity)).setLmtPrice(limit)
+                    .setTif("GTC").setOutsideRth(true).setAccount(account).setTransmit(true).build());
+
+            double filled = collectStatuses(events, orderId, Duration.ofSeconds(20));
+            if (filled > 0) {
+                System.out.println("filled " + filled + "; flattening with a marketable SELL");
+                client.placeOrder(orderId + 1, contract, OrderProto.Order.newBuilder()
+                        .setAction("SELL").setOrderType("LMT")
+                        .setTotalQuantity(Integer.toString((int) filled))
+                        .setLmtPrice(Math.round(price * 0.90 * 100.0) / 100.0)
+                        .setTif("GTC").setAccount(account).setTransmit(true).build());
+                collectStatuses(events, orderId + 1, Duration.ofSeconds(20));
+            } else {
+                client.cancelOrder(orderId);
+                collectStatuses(events, orderId, Duration.ofSeconds(15));
+            }
+
+            client.send(io.github.bjconlan.ibkr.protocol.OutgoingId.REQ_POSITIONS,
+                    PositionsRequestProto.PositionsRequest.getDefaultInstance());
+            Thread.sleep(2_000);
+        }
+    }
+
+    private static double collectStatuses(BlockingQueue<IbEvent> events, int orderId, Duration window)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + window.toNanos();
+        double filled = 0;
+        String last = null;
+        while (System.nanoTime() < deadline) {
+            IbEvent event = events.poll(deadline - System.nanoTime(), TimeUnit.NANOSECONDS);
+            if (event instanceof IbEvent.Message m && m.payload() instanceof OrderStatusProto.OrderStatus s
+                    && s.getOrderId() == orderId) {
+                if (!s.getStatus().equals(last)) {
+                    System.out.printf("status: %s filled=%s @ %s%n",
+                            s.getStatus(), s.getFilled(), s.getAvgFillPrice());
+                    last = s.getStatus();
+                }
+                try {
+                    filled = Double.parseDouble(s.getFilled());
+                } catch (NumberFormatException ignored) {
+                    // keep previous
+                }
+            } else {
+                print(event);
+            }
+        }
+        return filled;
+    }
+
     private static ContractProto.Contract fmg() {
         return ContractProto.Contract.newBuilder()
                 .setSymbol("FMG")
