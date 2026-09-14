@@ -62,11 +62,14 @@ IBKR_SMOKE=true IBKR_GATEWAY_PORT=4002 mvn test -Dtest=GatewaySmokeTest
 ```
 
 `PaperOrderTest` is an opt-in order lifecycle probe against a **non-read-only** paper gateway
-(a container started with `READ_ONLY_API=no`). It resolves FMG on ASX, places a small resting
-limit buy (about A$3000), checks the order status and open order, then cancels it:
+(a container started with `READ_ONLY_API=no`). It resolves FMG on ASX and covers two paths: a
+resting limit buy that is checked then cancelled, and a marketable limit buy that is allowed to
+fill and is then flattened with a market sell. The fill path also exercises the execution and
+commission callbacks:
 
 ```sh
 IBKR_ORDER=true IBKR_GATEWAY_PORT=4002 mvn test -Dtest=PaperOrderTest
+IBKR_ORDER=true IBKR_GATEWAY_PORT=4002 mvn test -Dtest='PaperOrderTest#fillAndFlattenOnOpenMarket'
 ```
 
 Note that `ContractDetails.minTick` is the smallest tick across all price bands (0.001 for ASX

@@ -1,11 +1,13 @@
 package io.github.bjconlan.ibkr;
 
 import io.github.bjconlan.ibkr.event.IbEvent;
+import io.github.bjconlan.ibkr.proto.CommissionAndFeesReportProto;
 import io.github.bjconlan.ibkr.proto.ContractDataEndProto;
 import io.github.bjconlan.ibkr.proto.ContractDataProto;
 import io.github.bjconlan.ibkr.proto.ContractDetailsProto;
 import io.github.bjconlan.ibkr.proto.ContractProto;
 import io.github.bjconlan.ibkr.proto.ErrorMessageProto;
+import io.github.bjconlan.ibkr.proto.ExecutionDetailsProto;
 import io.github.bjconlan.ibkr.proto.ManagedAccountsProto;
 import io.github.bjconlan.ibkr.proto.NextValidIdProto;
 import io.github.bjconlan.ibkr.proto.OpenOrderProto;
@@ -170,6 +172,63 @@ class PaperOrderTest {
         }
     }
 
+    @Test
+    void fillAndFlattenOnOpenMarket() throws Exception {
+        BlockingQueue<IbEvent> events = new LinkedBlockingQueue<>();
+        TwsConfig config = new TwsConfig(host(), port(), clientId(), "", Duration.ofSeconds(10), 2,
+                Duration.ofMillis(500), 100);
+
+        try (TwsClient client = new TwsClient(config, events::add)) {
+            client.connect();
+            ManagedAccountsProto.ManagedAccounts accounts = await(events, ManagedAccountsProto.ManagedAccounts.class, 10);
+            String account = accounts.getAccountsList().split(",")[0];
+            int orderId = await(events, NextValidIdProto.NextValidId.class, 10).getOrderId();
+
+            client.reqContractDetails(1, fmg());
+            ContractDataProto.ContractData data = await(events, ContractDataProto.ContractData.class, 30);
+            ContractProto.Contract contract = data.getContract();
+            System.out.printf("timeZone=%s tradingHours=%s%n",
+                    data.getContractDetails().getTimeZoneId(), data.getContractDetails().getTradingHours());
+            await(events, ContractDataEndProto.ContractDataEnd.class, 30);
+
+            double price = referencePrice(client, events, contract);
+            if (price <= 0) {
+                price = 16.67;
+                System.out.printf("no reference price; using %.2f%n", price);
+            }
+            double tick = 0.01;
+            int quantity = Math.max(1, (int) Math.round(TARGET_NOTIONAL / price));
+            double buyLimit = Math.ceil(price * 1.02 / tick) * tick;
+            System.out.printf("reference %.3f -> BUY LMT %d @ %.2f (marketable, ~A$%.2f)%n",
+                    price, quantity, buyLimit, quantity * buyLimit);
+
+            client.placeOrder(orderId, contract, OrderProto.Order.newBuilder()
+                    .setAction("BUY").setOrderType("LMT")
+                    .setTotalQuantity(Integer.toString(quantity)).setLmtPrice(buyLimit)
+                    .setTif("DAY").setAccount(account).setTransmit(true).build());
+            double filled = collectStatuses(events, orderId, Duration.ofSeconds(30));
+            System.out.println("BUY filled " + filled);
+
+            if (filled > 0) {
+                client.placeOrder(orderId + 1, contract, OrderProto.Order.newBuilder()
+                        .setAction("SELL").setOrderType("MKT")
+                        .setTotalQuantity(Integer.toString((int) filled))
+                        .setTif("DAY").setAccount(account).setTransmit(true).build());
+                double sold = collectStatuses(events, orderId + 1, Duration.ofSeconds(30));
+                System.out.println("SELL filled " + sold);
+            } else {
+                client.cancelOrder(orderId);
+                collectStatuses(events, orderId, Duration.ofSeconds(15));
+            }
+
+            client.send(io.github.bjconlan.ibkr.protocol.OutgoingId.REQ_POSITIONS,
+                    PositionsRequestProto.PositionsRequest.getDefaultInstance());
+            Thread.sleep(3_000);
+
+            org.junit.jupiter.api.Assertions.assertTrue(filled > 0, "buy did not fill");
+        }
+    }
+
     private static double collectStatuses(BlockingQueue<IbEvent> events, int orderId, Duration window)
             throws InterruptedException {
         long deadline = System.nanoTime() + window.toNanos();
@@ -292,6 +351,15 @@ class PaperOrderTest {
         } else if (event instanceof IbEvent.Message m && m.payload() instanceof PositionProto.Position p) {
             System.out.printf("(position) %s %s %s%n",
                     p.getContract().getSymbol(), p.getPosition(), p.getAvgCost());
+        } else if (event instanceof IbEvent.Message m
+                && m.payload() instanceof ExecutionDetailsProto.ExecutionDetails e) {
+            System.out.printf("(exec) %s %s %s @ %s qty %s%n",
+                    e.getExecution().getSide(), e.getContract().getSymbol(),
+                    e.getExecution().getOrderId(), e.getExecution().getPrice(), e.getExecution().getShares());
+        } else if (event instanceof IbEvent.Message m
+                && m.payload() instanceof CommissionAndFeesReportProto.CommissionAndFeesReport c) {
+            System.out.printf("(commission) exec=%s %.2f %s realizedPnL=%.2f%n",
+                    c.getExecId(), c.getCommissionAndFees(), c.getCurrency(), c.getRealizedPNL());
         }
     }
 }
