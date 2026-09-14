@@ -37,6 +37,10 @@ mvn test
 | `mvn test` | Unit tests: codec, pacer, fake-TWS socket test. No Docker, no network. |
 | `mvn verify` | The unit tests plus `IbGatewayContainerIT`, if credentials and Docker are available. |
 
+Opt-in probes for a running gateway (`ContractProbeTest`, `GatewaySmokeTest`, `PaperOrderTest`,
+`AccountStreamsTest`, `FeatureProbeTest`) and a record of what has and has not been exercised
+against a real account are in [`docs/verification-status.md`](docs/verification-status.md).
+
 `IbGatewayContainerIT` starts a paper IB Gateway with Testcontainers (the same
 `ghcr.io/gnzsnz/ib-gateway` image as `~/Workspace/lo.fi/compose.yaml`), waits for IBC's
 "Login has completed" log line plus the API port, then connects, resolves `AAPL` contract
