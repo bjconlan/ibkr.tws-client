@@ -25,15 +25,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * IBKR_FEATURES=true IBKR_GATEWAY_PORT=4002 mvn test -Dtest=FeatureProbeTest
  * }</pre>
  *
- * <p>Against a paper account with no market data subscription, the reference and account
- * requests respond (matching symbols, market rule, depth exchanges, family codes, soft dollar
- * tiers, sec-def opt params, news providers, scanner parameters/data, symbol samples, user info,
- * current time in millis, display groups, positions/account-updates multi) while the market data
- * family is refused: depth/tick-by-tick/real-time bars need a subscription, and historical
- * ticks/histogram are refused with "Trading TWS session is connected from a different IP
- * address" (an account-level competing-session restriction, not a client issue).
- * {@code reqSmartComponents} needs a {@code bboExchange} that TWS only supplies via
- * {@code TickReqParams} on a live subscription, so the probe cannot supply a valid one.
+ * <p>On a paper account with no market data subscription, the reference, account and historical
+ * family all answer: matching symbols, market rule, depth exchanges, family codes, soft dollar
+ * tiers, sec-def opt params, news providers, historical news and news article, scanner
+ * parameters/data, symbol samples, user info, current time in millis, display groups,
+ * positions/account-updates multi, head timestamp, histogram, and historical ticks (last, bid-ask
+ * and midpoint). The market data family is refused: depth, tick-by-tick and real-time bars need a
+ * subscription, {@code reqSmartComponents} needs a {@code bboExchange} that TWS only supplies via
+ * {@code TickReqParams} on a live feed, and WSH gets no response on this account.
+ *
+ * <p>The historical family is additionally refused with "Trading TWS session is connected from a
+ * different IP address" while the paper account is logged in elsewhere; that is an account-level
+ * competing-session restriction, not a client issue, and clears once the other session ends.
  */
 @EnabledIfEnvironmentVariable(named = "IBKR_FEATURES", matches = "true")
 class FeatureProbeTest {
@@ -43,6 +46,8 @@ class FeatureProbeTest {
         BlockingQueue<IbEvent> events = new LinkedBlockingQueue<>();
         Map<String, Integer> counts = new TreeMap<>();
         Set<String> errors = new TreeSet<>();
+        java.util.concurrent.atomic.AtomicReference<HistoricalNewsProto.HistoricalNews> firstNews =
+                new java.util.concurrent.atomic.AtomicReference<>();
 
         TwsConfig config = new TwsConfig(env("IBKR_GATEWAY_HOST", "127.0.0.1"),
                 Integer.parseInt(env("IBKR_GATEWAY_PORT", "4002")),
@@ -110,6 +115,14 @@ class FeatureProbeTest {
                     .setReqId(32).setContract(aapl())
                     .setStartDateTime("20260913-00:00:00").setEndDateTime("20260914-00:00:00")
                     .setNumberOfTicks(5).setWhatToShow("TRADES").setUseRTH(true).build());
+            client.send(OutgoingId.REQ_HISTORICAL_TICKS, HistoricalTicksRequestProto.HistoricalTicksRequest.newBuilder()
+                    .setReqId(40).setContract(aapl())
+                    .setStartDateTime("20260913-00:00:00").setEndDateTime("20260914-00:00:00")
+                    .setNumberOfTicks(5).setWhatToShow("BID_ASK").setUseRTH(true).build());
+            client.send(OutgoingId.REQ_HISTORICAL_TICKS, HistoricalTicksRequestProto.HistoricalTicksRequest.newBuilder()
+                    .setReqId(41).setContract(aapl())
+                    .setStartDateTime("20260913-00:00:00").setEndDateTime("20260914-00:00:00")
+                    .setNumberOfTicks(5).setWhatToShow("MIDPOINT").setUseRTH(true).build());
             client.send(OutgoingId.REQ_HEAD_TIMESTAMP, HeadTimestampRequestProto.HeadTimestampRequest.newBuilder()
                     .setReqId(33).setContract(aapl()).setUseRTH(true).setWhatToShow("TRADES").setFormatDate(1).build());
             client.send(OutgoingId.REQ_HISTOGRAM_DATA, HistogramDataRequestProto.HistogramDataRequest.newBuilder()
@@ -124,7 +137,15 @@ class FeatureProbeTest {
                                     .setScanCode("TOP_PERC_GAIN").build())
                             .build());
 
-            drain(events, Duration.ofSeconds(25), counts, errors);
+            drain(events, Duration.ofSeconds(25), counts, errors, firstNews);
+
+            // Exercise the news-article decoder using an id from the historical news response.
+            HistoricalNewsProto.HistoricalNews news = firstNews.get();
+            if (news != null) {
+                System.out.printf("news article %s from %s%n", news.getArticleId(), news.getProviderCode());
+                client.send(OutgoingId.REQ_NEWS_ARTICLE, NewsArticleRequestProto.NewsArticleRequest.newBuilder()
+                        .setReqId(25).setProviderCode(news.getProviderCode()).setArticleId(news.getArticleId()).build());
+            }
 
             // ---- cancel every subscription
             client.send(OutgoingId.CANCEL_MKT_DEPTH, CancelMarketDepthProto.CancelMarketDepth.newBuilder()
@@ -151,7 +172,7 @@ class FeatureProbeTest {
                     CancelWshMetaDataProto.CancelWshMetaData.newBuilder().setReqId(22).build());
             client.send(OutgoingId.CANCEL_WSH_EVENT_DATA,
                     CancelWshEventDataProto.CancelWshEventData.newBuilder().setReqId(23).build());
-            drain(events, Duration.ofSeconds(5), counts, errors);
+            drain(events, Duration.ofSeconds(5), counts, errors, firstNews);
         }
 
         System.out.println("payloads: " + counts);
@@ -178,7 +199,9 @@ class FeatureProbeTest {
     }
 
     private static void drain(BlockingQueue<IbEvent> events, Duration window,
-                              Map<String, Integer> counts, Set<String> errors) throws InterruptedException {
+                              Map<String, Integer> counts, Set<String> errors,
+                              java.util.concurrent.atomic.AtomicReference<HistoricalNewsProto.HistoricalNews> firstNews)
+            throws InterruptedException {
         long deadline = System.nanoTime() + window.toNanos();
         while (System.nanoTime() < deadline) {
             IbEvent event = events.poll(deadline - System.nanoTime(), TimeUnit.NANOSECONDS);
@@ -187,6 +210,9 @@ class FeatureProbeTest {
             }
             if (event instanceof IbEvent.Message m) {
                 counts.merge(m.payload().getClass().getSimpleName(), 1, Integer::sum);
+                if (m.payload() instanceof HistoricalNewsProto.HistoricalNews n) {
+                    firstNews.compareAndSet(null, n);
+                }
                 if (m.payload() instanceof ErrorMessageProto.ErrorMessage e) {
                     errors.add("%d: %s".formatted(e.getErrorCode(), e.getErrorMsg()));
                 }
