@@ -84,6 +84,54 @@ Environment overrides: `IBKR_GATEWAY_HOST` (default `127.0.0.1`), `IBKR_GATEWAY_
 (default `4002`), `IBKR_CLIENT_ID` (default `99`). Market data may still be refused with
 error `10197` when another session is live.
 
+## Verification
+
+Exercised against a paper IB Gateway (server 226, account `DU5415404`, no market data
+subscription, so delayed data) on 2026-09-14. Full detail, including how to run each probe, is in
+[`docs/verification-status.md`](docs/verification-status.md).
+
+### Tested
+
+- **Session** — `API\0` handshake, server-version negotiation, connect / disconnect / error.
+  Across every probe no `unknown message id` (505) was observed, so the `IncomingId` wiring covers
+  everything the server sent.
+- **Reference data** — matching symbols, market rule, depth exchanges, family codes, soft dollar
+  tiers, sec-def opt params (39 sets), news providers, symbol samples, user info, current time in
+  millis, display groups.
+- **Account** — account summary (with tags), account updates, account updates multi, positions
+  multi, PnL.
+- **Historical / news** — contract details, historical bars, head timestamp, histogram, historical
+  ticks (TRADES, BID_ASK, MIDPOINT), historical news and a news article fetched by id.
+- **Scanner** — parameters and a live scanner subscription.
+- **Orders (read-write)** — resting limit buy submitted, echoed by `reqOpenOrders`, cancelled;
+  marketable limit buy `PreSubmitted` → `Filled`, then a market sell to flatten, with
+  `ExecutionDetails` and `CommissionAndFeesReport` for both legs and the position back to zero.
+
+### Not tested
+
+- **Market data that needs a subscription** — market depth (L1/L2), tick-by-tick, real-time bars,
+  smart components, tick news, the live/frozen/regulatory market data types, and generic tick
+  lists. These requests are refused with `10189`/`420`/`2152` on an account without a feed.
+- **WSH** — `reqWshMetaData` / `reqWshEventData` returned nothing on this account.
+- **Order types beyond LMT/MKT** — stop, trailing, bracket/OCA/attached, algo, order conditions,
+  fractional, short sales, combos; plus `whatIf` preview, modify/replace, global cancel,
+  auto-open orders, order bound, partial fills, rejections, GTD/GTC expiry and extended hours.
+- **Instruments** — FX, futures, options, bonds and combos are untested; crypto contract data and
+  market data resolve, but the paper account rejects crypto orders (`201 Invalid account`).
+- **Portfolio / FA** — a non-flat portfolio, PnL alongside a position, `reqPnLSingle` for a held
+  contract, model/FA flows, and the full account-summary tag set.
+- **Historical matrix** — bar sizes and durations, `whatToShow` values other than
+  TRADES/BID_ASK/MIDPOINT, `formatDate=2`, `keepUpToDate`, `SCHEDULE`, and FX/futures history.
+- **Resilience and concurrency** — reconnect after a dropped socket, multiple clients, version
+  boundaries (201–225 and above 226), TLS, malformed frames, parallel virtual-thread load, and
+  actually breaching a pacing limit.
+- **Legacy / admin** — `verifyRequest`/`verifyMessage`, `reqConfig`/`updateConfig`, and the
+  display-group subscribe/update/unsubscribe flows.
+
+Implementation gaps (as opposed to test coverage) are listed under
+[Trade-offs and limitations](#trade-offs-and-limitations) — notably BID_ASK double-counting and
+keyed historical rules on the generic `send` path.
+
 ## Compatibility
 
 | Component | Version | Notes |
@@ -314,7 +362,12 @@ One documented rule is not modelled: **BID_ASK historical requests count twice**
   to the caller, who may want to re-subscribe explicitly.
 - **Pacing follows the documented limits.** The aggregate rate is market data lines ÷ 2
   (`TwsConfig.marketDataLines`), so set it to your entitlement; the defaults assume the
-  minimum of 100 lines. BID_ASK double-counting is documented but not modelled.
+  minimum of 100 lines. BID_ASK double-counting is documented but not modelled, and the keyed
+  historical rules (identical request, same contract) apply on the typed `reqHistoricalData` —
+  the raw `send(OutgoingId, MessageLite)` path supplies no keys and so skips them.
+- **Partial typed surface.** `TwsClient` has typed conveniences for the common requests (~17 of
+  the 83 outbound ids); everything else goes through `send(OutgoingId, MessageLite)` with the
+  generated protobuf message.
 
 ## License
 
