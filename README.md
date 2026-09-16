@@ -1,4 +1,4 @@
-# ibkr-tws
+# ibkr.tws-client
 
 A minimal, Java 25 idiomatic client for the Interactive Brokers TWS API.
 
