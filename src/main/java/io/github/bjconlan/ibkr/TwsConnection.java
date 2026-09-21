@@ -5,6 +5,7 @@ import io.github.bjconlan.ibkr.event.IbEvent;
 import io.github.bjconlan.ibkr.pacing.Pacer;
 import io.github.bjconlan.ibkr.pacing.PacingKeys;
 import io.github.bjconlan.ibkr.protocol.Encoder;
+import io.github.bjconlan.ibkr.protocol.IncomingId;
 import io.github.bjconlan.ibkr.protocol.OutgoingId;
 import io.github.bjconlan.ibkr.proto.AccountDataRequestProto;
 import io.github.bjconlan.ibkr.proto.CancelContractDataProto;
@@ -38,15 +39,20 @@ import java.io.UncheckedIOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 /**
- * A minimal, thread-safe TWS API client.
+ * One TWS API connection: a client id, a socket, its own request-id sequence and its own pacing.
+ * Obtained from {@link #open(TwsConfig, EventHandler)} and closed by the caller. Request scopes are
+ * created with {@link TwsSession}.
  *
  * <p>{@link #send(OutgoingId, MessageLite)} frames and paces any request the protocol defines;
- * the typed methods below are conveniences that build the common messages. Request methods are
- * synchronous: they may block on the {@link Pacer} until it is safe to send (virtual threads make
- * this cheap), then hand the frame to the transport. Server messages arrive as {@link IbEvent}s
- * on the {@link EventHandler} passed to the constructor, in order.
+ * the typed methods below are conveniences that build the common messages, and the request-id
+ * taking ones are deprecated in favour of {@link TwsSession}. Request methods are synchronous:
+ * they may block on the {@link Pacer} until it is safe to send (virtual threads make this cheap),
+ * then hand the frame to the transport. Server messages arrive as {@link IbEvent}s on the
+ * {@link EventHandler} passed to the constructor, in order; responses to a {@link TwsSession}
+ * request go to that request instead.
  *
  * <p>Pacing is configured from {@link TwsConfig#marketDataLines()}: the account's market data line
  * entitlement sets the aggregate request rate and the subscription concurrency limits. Pass a
@@ -55,7 +61,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>Market data lines are tracked as held permits: one is taken per subscription and returned
  * when the subscription is cancelled, when a snapshot completes, or when the connection drops.
  */
-public final class TwsClient implements AutoCloseable {
+public final class TwsConnection implements AutoCloseable {
 
     private final TwsConfig config;
     private final EventHandler handler;
@@ -63,17 +69,38 @@ public final class TwsClient implements AutoCloseable {
 
     private final AtomicInteger reqIdSeq = new AtomicInteger(1);
     private final Map<Integer, Pacer.Lease> marketDataLeases = new ConcurrentHashMap<>();
+    private final Map<Integer, RequestHandle> pending = new ConcurrentHashMap<>();
+    private final Map<IncomingId, TwsRequest> routes = new ConcurrentHashMap<>();
 
     private volatile Transport transport;
 
-    public TwsClient(TwsConfig config, EventHandler handler) {
-        this(config, handler, Pacer.of(config.marketDataLines()));
-    }
-
-    public TwsClient(TwsConfig config, EventHandler handler, Pacer pacer) {
+    private TwsConnection(TwsConfig config, EventHandler handler, Pacer pacer) {
         this.config = config;
         this.handler = handler;
         this.pacer = pacer;
+    }
+
+    /**
+     * Opens a connection, retrying transient failures with exponential backoff, then starts the
+     * API so TWS begins delivering {@code ManagedAccounts} and {@code NextValidId}. The caller owns
+     * the returned connection and must close it.
+     *
+     * @throws IOException if the socket cannot be opened or the handshake fails
+     */
+    public static TwsConnection open(TwsConfig config, EventHandler handler) throws IOException {
+        return open(config, handler, Pacer.of(config.marketDataLines()));
+    }
+
+    /** As {@link #open(TwsConfig, EventHandler)} with an explicit {@link Pacer}. */
+    public static TwsConnection open(TwsConfig config, EventHandler handler, Pacer pacer) throws IOException {
+        TwsConnection connection = new TwsConnection(config, handler, pacer);
+        try {
+            connection.connect();
+            return connection;
+        } catch (IOException | RuntimeException e) {
+            connection.close();
+            throw e;
+        }
     }
 
     // ------------------------------------------------------------------ lifecycle
@@ -93,10 +120,19 @@ public final class TwsClient implements AutoCloseable {
     }
 
     /**
+     * Creates a new request scope over this connection. The session allocates request ids through
+     * this connection and cancels its own requests when closed; the connection stays open. Each
+     * call returns an independent scope.
+     */
+    public TwsSession createSession() {
+        return new TwsSession(() -> this);
+    }
+
+    /**
      * Connects, retrying transient failures with exponential backoff, then starts the API so
      * TWS begins delivering {@code ManagedAccounts} and {@code NextValidId}.
      */
-    public void connect() throws IOException {
+    private void connect() throws IOException {
         Retry retry = Retry.of("ibkr-connect", RetryConfig.<Transport>custom()
                 .maxAttempts(config.connectAttempts())
                 .intervalFunction(IntervalFunction.ofExponentialBackoff(config.initialBackoff()))
@@ -115,6 +151,10 @@ public final class TwsClient implements AutoCloseable {
                     .get();
             this.transport = opened;
             send(OutgoingId.START_API, PacingKeys.NONE, startApi());
+            MarketDataType marketDataType = config.marketDataType();
+            if (marketDataType != null) {
+                setMarketDataType(marketDataType);
+            }
         } catch (RuntimeException e) {
             throw new IOException("could not connect to %s:%d".formatted(config.host(), config.port()), e);
         }
@@ -128,9 +168,11 @@ public final class TwsClient implements AutoCloseable {
             t.close();
         }
         releaseAllMarketData();
+        failAllPending(new IllegalStateException("connection closed"));
     }
 
     /** The next unused request id. */
+    @Deprecated(since = "1.0.0", forRemoval = true) // use TwsSession instead
     public int nextReqId() {
         return reqIdSeq.getAndIncrement();
     }
@@ -158,17 +200,20 @@ public final class TwsClient implements AutoCloseable {
                 IdsRequestProto.IdsRequest.newBuilder().setNumIds(1).build());
     }
 
+    @Deprecated(since = "1.0.0", forRemoval = true) // use TwsSession instead
     public void reqContractDetails(int reqId, ContractProto.Contract contract) {
         send(OutgoingId.REQ_CONTRACT_DATA, PacingKeys.NONE,
                 ContractDataRequestProto.ContractDataRequest.newBuilder()
                         .setReqId(reqId).setContract(contract).build());
     }
 
+    @Deprecated(since = "1.0.0", forRemoval = true) // use TwsSession instead
     public void cancelContractDetails(int reqId) {
         send(OutgoingId.CANCEL_CONTRACT_DATA, PacingKeys.NONE,
                 CancelContractDataProto.CancelContractData.newBuilder().setReqId(reqId).build());
     }
 
+    @Deprecated(since = "1.0.0", forRemoval = true) // use TwsSession instead
     public void reqMktData(int reqId, ContractProto.Contract contract, String genericTickList,
                            boolean snapshot, boolean regulatorySnapshot) {
         MarketDataRequestProto.MarketDataRequest.Builder b = MarketDataRequestProto.MarketDataRequest.newBuilder()
@@ -193,6 +238,7 @@ public final class TwsClient implements AutoCloseable {
         }
     }
 
+    @Deprecated(since = "1.0.0", forRemoval = true) // use TwsSession instead
     public void cancelMktData(int reqId) {
         send(OutgoingId.CANCEL_MKT_DATA, PacingKeys.NONE,
                 CancelMarketDataProto.CancelMarketData.newBuilder().setReqId(reqId).build());
@@ -203,6 +249,7 @@ public final class TwsClient implements AutoCloseable {
      * Requests historical bars. Parameter order mirrors the upstream {@code EClient}:
      * {@code endDateTime, duration, barSizeSetting, whatToShow, useRTH, formatDate, keepUpToDate}.
      */
+    @Deprecated(since = "1.0.0", forRemoval = true) // use TwsSession instead
     public void reqHistoricalData(int reqId, ContractProto.Contract contract, String endDateTime,
                                   String duration, String barSizeSetting, String whatToShow,
                                   boolean useRTH, int formatDate, boolean keepUpToDate) {
@@ -223,6 +270,7 @@ public final class TwsClient implements AutoCloseable {
                         .build());
     }
 
+    @Deprecated(since = "1.0.0", forRemoval = true) // use TwsSession instead
     public void cancelHistoricalData(int reqId) {
         send(OutgoingId.CANCEL_HISTORICAL_DATA, PacingKeys.NONE,
                 CancelHistoricalDataProto.CancelHistoricalData.newBuilder().setReqId(reqId).build());
@@ -254,6 +302,7 @@ public final class TwsClient implements AutoCloseable {
                 CancelPositionsProto.CancelPositions.getDefaultInstance());
     }
 
+    @Deprecated(since = "1.0.0", forRemoval = true) // use TwsSession instead
     public void reqExecutions(int reqId, ExecutionFilterProto.ExecutionFilter filter) {
         send(OutgoingId.REQ_EXECUTIONS, PacingKeys.NONE,
                 ExecutionRequestProto.ExecutionRequest.newBuilder()
@@ -273,10 +322,10 @@ public final class TwsClient implements AutoCloseable {
         send(OutgoingId.REQ_ACCOUNT_DATA, PacingKeys.NONE, b.build());
     }
 
-    public void setMarketDataType(int marketDataType) {
+    public void setMarketDataType(MarketDataType marketDataType) {
         send(OutgoingId.REQ_MARKET_DATA_TYPE, PacingKeys.NONE,
                 MarketDataTypeRequestProto.MarketDataTypeRequest.newBuilder()
-                        .setMarketDataType(marketDataType).build());
+                        .setMarketDataType(marketDataType.code()).build());
     }
 
     // ------------------------------------------------------------------ internals
@@ -300,6 +349,52 @@ public final class TwsClient implements AutoCloseable {
         t.send(Encoder.encode(id, body));
     }
 
+    // ------------------------------------------------------------------ request routing
+
+    /** Creates (but does not send) a request handle; the session registers it before {@link #start}. */
+    RequestHandle create(TwsRequest request, RequestSink sink, Consumer<RequestHandle> onDone) {
+        return new RequestHandle(this, reqIdSeq.getAndIncrement(), request, sink, onDone);
+    }
+
+    /** Paces and sends a created handle, then tracks it until it terminates, fails or is closed. */
+    void start(RequestHandle handle) {
+        Transport t = transport;
+        if (t == null || !t.isOpen()) {
+            throw new IllegalStateException("not connected");
+        }
+        TwsRequest request = handle.request();
+        request.responses().forEach(id -> routes.put(id, request));
+        try {
+            if (request.lineLease()) {
+                handle.lease(pacer.acquireLease(request.id()));
+            }
+            pacer.acquire(request.id(), request.pacing());
+            pending.put(handle.reqId(), handle);
+            t.send(Encoder.encode(request.id(), request.encode().apply(handle.reqId())));
+        } catch (RuntimeException e) {
+            handle.fail(e);
+            throw e;
+        }
+    }
+
+    void forget(int reqId) {
+        pending.remove(reqId);
+    }
+
+    void sendIfOpen(OutgoingId id, MessageLite body) {
+        Transport t = transport;
+        if (t != null && t.isOpen()) {
+            t.send(Encoder.encode(id, body));
+        }
+    }
+
+    private void failAllPending(Throwable cause) {
+        for (RequestHandle handle : pending.values()) {
+            handle.fail(cause);
+        }
+        pending.clear();
+    }
+
     private void releaseMarketData(int reqId) {
         Pacer.Lease lease = marketDataLeases.remove(reqId);
         if (lease != null) {
@@ -312,19 +407,47 @@ public final class TwsClient implements AutoCloseable {
         marketDataLeases.clear();
     }
 
-    /** Intercepts lifecycle events so held permits are always returned. */
+    /** Routes events to the request waiting for them, then to the connection-level handler. */
     private void dispatch(IbEvent event) {
         switch (event) {
             case IbEvent.Message m -> {
+                if (route(m)) {
+                    return;
+                }
                 if (m.payload() instanceof TickSnapshotEndProto.TickSnapshotEnd end) {
                     releaseMarketData(end.getReqId());
                 }
             }
-            case IbEvent.Disconnected ignored -> releaseAllMarketData();
+            case IbEvent.Disconnected d -> {
+                failAllPending(d.cause() == null ? new IllegalStateException(d.reason()) : d.cause());
+                releaseAllMarketData();
+            }
+            case IbEvent.Error e -> {
+                RequestHandle handle = pending.get(e.requestId());
+                if (handle != null) {
+                    handle.fail(new IbRequestException(e));
+                }
+            }
             case IbEvent.Connected ignored -> { }
-            case IbEvent.Error ignored -> { }
         }
         handler.onEvent(event);
+    }
+
+    /** @return true if the message belonged to a pending request and was delivered to it. */
+    private boolean route(IbEvent.Message m) {
+        TwsRequest request = routes.get(IncomingId.fromId(m.id()));
+        if (request == null) {
+            return false;
+        }
+        RequestHandle handle = pending.get(request.correlate().applyAsInt(m));
+        if (handle == null) {
+            return false;
+        }
+        handle.message(m);
+        if (request.terminal() != null && request.terminal().test(m)) {
+            handle.terminal();
+        }
+        return true;
     }
 
     private static String fingerprint(ContractProto.Contract contract) {

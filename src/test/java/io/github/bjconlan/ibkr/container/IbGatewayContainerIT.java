@@ -1,6 +1,6 @@
 package io.github.bjconlan.ibkr.container;
 
-import io.github.bjconlan.ibkr.TwsClient;
+import io.github.bjconlan.ibkr.TwsConnection;
 import io.github.bjconlan.ibkr.TwsConfig;
 import io.github.bjconlan.ibkr.event.IbEvent;
 import io.github.bjconlan.ibkr.proto.ContractDataEndProto;
@@ -67,10 +67,9 @@ class IbGatewayContainerIT {
     void connectsAndServesSessionContractAndTimeData() throws Exception {
         BlockingQueue<IbEvent> events = new LinkedBlockingQueue<>();
         TwsConfig config = new TwsConfig(gateway.gatewayHost(), gateway.gatewayPort(), 91, "",
-                Duration.ofSeconds(15), 3, Duration.ofSeconds(2), 100);
+                Duration.ofSeconds(15), 3, Duration.ofSeconds(2), 100, null);
 
-        try (TwsClient client = new TwsClient(config, events::add)) {
-            client.connect();
+        try (TwsConnection client = TwsConnection.open(config, events::add)) {
             assertTrue(client.isConnected());
             assertEquals(226, client.serverVersion());
 

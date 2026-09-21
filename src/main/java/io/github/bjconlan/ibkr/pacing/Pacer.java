@@ -33,24 +33,42 @@ public final class Pacer {
     private final List<PacingRule> globalRules;
     private final Map<OutgoingId, List<PacingRule>> rules;
     private final Duration acquireTimeout;
+    private final SubscriptionBudget budget;
 
     private final Map<String, RateLimiter> rateLimiters = new ConcurrentHashMap<>();
     private final Map<String, RateLimiter> keyedLimiters = new ConcurrentHashMap<>();
-    private final Map<String, Bulkhead> bulkheads = new ConcurrentHashMap<>();
 
     public Pacer(List<PacingRule> globalRules,
                  Map<OutgoingId, List<PacingRule>> rules,
                  Duration acquireTimeout) {
+        this(globalRules, rules, acquireTimeout, new SubscriptionBudget());
+    }
+
+    /** As above, sharing {@code budget}'s subscription permits with other pacers. */
+    public Pacer(List<PacingRule> globalRules,
+                 Map<OutgoingId, List<PacingRule>> rules,
+                 Duration acquireTimeout,
+                 SubscriptionBudget budget) {
         this.globalRules = List.copyOf(globalRules);
         this.rules = Map.copyOf(rules);
         this.acquireTimeout = Objects.requireNonNull(acquireTimeout, "acquireTimeout");
+        this.budget = Objects.requireNonNull(budget, "budget");
     }
 
     /** A pacer with the documented limits for {@code marketDataLines} lines and default timeout. */
     public static Pacer of(int marketDataLines) {
+        return of(marketDataLines, new SubscriptionBudget());
+    }
+
+    /**
+     * A pacer with per-connection rate limits that draw subscription permits from a shared
+     * {@code budget}. Use this for the connections of a pool.
+     */
+    public static Pacer of(int marketDataLines, SubscriptionBudget budget) {
         return new Pacer(PacingRules.global(marketDataLines),
                 PacingRules.standard(marketDataLines),
-                DEFAULT_ACQUIRE_TIMEOUT);
+                DEFAULT_ACQUIRE_TIMEOUT,
+                budget);
     }
 
     /** A pacer for the default entitlement of 100 market data lines. */
@@ -91,7 +109,7 @@ public final class Pacer {
         Bulkhead bulkhead = null;
         for (PacingRule rule : rules.getOrDefault(id, List.of())) {
             if (rule instanceof PacingRule.Concurrency concurrency) {
-                bulkhead = bulkheads.computeIfAbsent(concurrency.name(),
+                bulkhead = budget.bulkheads().computeIfAbsent(concurrency.name(),
                         name -> Bulkhead.of(name, BulkheadConfig.custom()
                                 .maxConcurrentCalls(concurrency.permits())
                                 .build()));

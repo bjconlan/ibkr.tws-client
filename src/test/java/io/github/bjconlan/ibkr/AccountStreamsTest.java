@@ -52,13 +52,12 @@ class AccountStreamsTest {
         TwsConfig config = new TwsConfig(env("IBKR_GATEWAY_HOST", "127.0.0.1"),
                 Integer.parseInt(env("IBKR_GATEWAY_PORT", "4002")),
                 Integer.parseInt(env("IBKR_CLIENT_ID", "93")), "",
-                Duration.ofSeconds(10), 2, Duration.ofMillis(500), 100);
+                Duration.ofSeconds(10), 2, Duration.ofMillis(500), 100, null);
 
         Map<String, Integer> counts = new TreeMap<>();
         Map<String, String> samples = new TreeMap<>();
 
-        try (TwsClient client = new TwsClient(config, events::add)) {
-            client.connect();
+        try (TwsConnection client = TwsConnection.open(config, events::add)) {
             ManagedAccountsProto.ManagedAccounts accounts = await(events, ManagedAccountsProto.ManagedAccounts.class, 10);
             String account = accounts.getAccountsList().split(",")[0];
             System.out.println("account " + account);

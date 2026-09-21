@@ -45,10 +45,9 @@ class ContractProbeTest {
         TwsConfig config = new TwsConfig(env("IBKR_GATEWAY_HOST", "127.0.0.1"),
                 Integer.parseInt(env("IBKR_GATEWAY_PORT", "4002")),
                 Integer.parseInt(env("IBKR_CLIENT_ID", "94")), "",
-                Duration.ofSeconds(10), 2, Duration.ofMillis(500), 100);
+                Duration.ofSeconds(10), 2, Duration.ofMillis(500), 100, null);
 
-        try (TwsClient client = new TwsClient(config, events::add)) {
-            client.connect();
+        try (TwsConnection client = TwsConnection.open(config, events::add)) {
             await(events, ManagedAccountsProto.ManagedAccounts.class, 10);
             for (int i = 0; i < contracts.size(); i++) {
                 client.reqContractDetails(i + 1, contracts.get(i));

@@ -47,10 +47,9 @@ class GatewaySmokeTest {
     void connectsAndRetrievesContractDetailsAndTime() throws Exception {
         BlockingQueue<IbEvent> events = new LinkedBlockingQueue<>();
         TwsConfig config = new TwsConfig(host(), port(), clientId(), "", Duration.ofSeconds(10), 2,
-                Duration.ofMillis(500), 100);
+                Duration.ofMillis(500), 100, null);
 
-        try (TwsClient client = new TwsClient(config, events::add)) {
-            client.connect();
+        try (TwsConnection client = TwsConnection.open(config, events::add)) {
             assertTrue(client.isConnected());
             System.out.println("connected to gateway, server version " + client.serverVersion());
 
@@ -70,7 +69,7 @@ class GatewaySmokeTest {
             await(events, ContractDataEndProto.ContractDataEnd.class);
 
             // Market data is account-entitlement dependent; log it but do not fail if denied.
-            client.setMarketDataType(3); // delayed
+            client.setMarketDataType(MarketDataType.DELAYED); // delayed
             client.reqMktData(2, contract("AAPL"), "", true, false);
             IbEvent tick = awaitAny(events, Duration.ofSeconds(10),
                     TickPriceProto.TickPrice.class, TickSizeProto.TickSize.class,

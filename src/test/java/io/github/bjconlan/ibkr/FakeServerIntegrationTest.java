@@ -7,6 +7,7 @@ import io.github.bjconlan.ibkr.protocol.Wire;
 import io.github.bjconlan.ibkr.proto.ContractProto;
 import io.github.bjconlan.ibkr.proto.CurrentTimeProto;
 import io.github.bjconlan.ibkr.proto.ManagedAccountsProto;
+import io.github.bjconlan.ibkr.proto.MarketDataRequestProto;
 import io.github.bjconlan.ibkr.proto.NextValidIdProto;
 import io.github.bjconlan.ibkr.proto.TickPriceProto;
 import io.github.bjconlan.ibkr.proto.TickSnapshotEndProto;
@@ -33,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Drives a real {@link TwsClient} against a socket-level fake of TWS. This exercises the
+ * Drives a real {@link TwsConnection} against a socket-level fake of TWS. This exercises the
  * handshake, framing, request serialisation, virtual-thread reader/writer/dispatcher and the
  * sealed event model without needing a running TWS.
  */
@@ -50,8 +51,7 @@ class FakeServerIntegrationTest {
             Thread serverThread = Thread.ofVirtual().start(() -> serve(server, receivedRequests));
 
             TwsConfig config = TwsConfig.defaults(7).withPort(server.getLocalPort());
-            try (TwsClient client = new TwsClient(config, events::add)) {
-                client.connect();
+            try (TwsConnection client = TwsConnection.open(config, events::add)) {
                 assertEquals(SERVER_VERSION, client.serverVersion());
                 assertTrue(client.isConnected());
 
@@ -79,21 +79,21 @@ class FakeServerIntegrationTest {
 
     @Test
     void snapshotMarketDataProducesTicks() throws Exception {
-        BlockingQueue<IbEvent> events = new LinkedBlockingQueue<>();
-
         try (ServerSocket server = new ServerSocket(0)) {
             Thread serverThread = Thread.ofVirtual().start(() -> serve(server, new LinkedBlockingQueue<>()));
 
             TwsConfig config = TwsConfig.defaults(8).withPort(server.getLocalPort());
-            try (TwsClient client = new TwsClient(config, events::add)) {
-                client.connect();
-                client.reqMktData(42, contract("AAPL"), "", true, false);
+            try (TwsConnection connection = TwsConnection.open(config, ignored -> { })) {
+                TwsSession session = connection.createSession();
+                List<IbEvent.Message> messages = session
+                        .submit(TwsRequest.marketData(contract("AAPL"), "", true, false))
+                        .get(5, TimeUnit.SECONDS);
 
-                awaitMessage(events, TickPriceProto.TickPrice.class, p -> {
-                    assertEquals(42, p.getReqId());
-                    assertEquals(189.25, p.getPrice());
-                });
-                awaitMessage(events, TickSnapshotEndProto.TickSnapshotEnd.class, s -> assertEquals(42, s.getReqId()));
+                assertEquals(2, messages.size(), messages.toString());
+                assertTrue(messages.get(0).payload() instanceof TickPriceProto.TickPrice price
+                        && price.getPrice() == 189.25, messages.toString());
+                assertTrue(messages.get(1).payload() instanceof TickSnapshotEndProto.TickSnapshotEnd,
+                        messages.toString());
             } finally {
                 serverThread.interrupt();
             }
@@ -153,10 +153,12 @@ class FakeServerIntegrationTest {
                     write(out, IncomingId.CURRENT_TIME,
                             CurrentTimeProto.CurrentTime.newBuilder().setCurrentTime(1_700_000_000L).build());
                 } else if (msgId == OutgoingId.REQ_MKT_DATA.id() + Wire.PROTOBUF_MSG_ID) {
+                    int reqId = MarketDataRequestProto.MarketDataRequest
+                            .parseFrom(Arrays.copyOfRange(payload, 4, payload.length)).getReqId();
                     write(out, IncomingId.TICK_PRICE, TickPriceProto.TickPrice.newBuilder()
-                            .setReqId(42).setTickType(1).setPrice(189.25).setSize("1").setAttrMask(0).build());
+                            .setReqId(reqId).setTickType(1).setPrice(189.25).setSize("1").setAttrMask(0).build());
                     write(out, IncomingId.TICK_SNAPSHOT_END,
-                            TickSnapshotEndProto.TickSnapshotEnd.newBuilder().setReqId(42).build());
+                            TickSnapshotEndProto.TickSnapshotEnd.newBuilder().setReqId(reqId).build());
                 }
             }
         } catch (IOException e) {

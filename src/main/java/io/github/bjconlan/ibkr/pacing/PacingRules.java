@@ -35,7 +35,7 @@ import java.util.Map;
  * <p>Rules are deliberately absent for order placement and execution requests: the current
  * documentation defines no per-type limit for them, so they are governed solely by the aggregate
  * limit. Callers who want a stricter policy can build their own map and pass a {@link Pacer} to
- * {@link io.github.bjconlan.ibkr.TwsClient}.
+ * {@link io.github.bjconlan.ibkr.TwsConnection}.
  */
 public final class PacingRules {
 

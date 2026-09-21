@@ -1,7 +1,10 @@
 package io.github.bjconlan.ibkr.demo;
 
-import io.github.bjconlan.ibkr.TwsClient;
+import io.github.bjconlan.ibkr.MarketDataType;
+import io.github.bjconlan.ibkr.TwsClientFactory;
 import io.github.bjconlan.ibkr.TwsConfig;
+import io.github.bjconlan.ibkr.TwsRequest;
+import io.github.bjconlan.ibkr.TwsSession;
 import io.github.bjconlan.ibkr.event.IbEvent;
 import io.github.bjconlan.ibkr.proto.ContractProto;
 import io.github.bjconlan.ibkr.proto.CurrentTimeProto;
@@ -12,7 +15,10 @@ import io.github.bjconlan.ibkr.proto.ManagedAccountsProto;
 import io.github.bjconlan.ibkr.proto.NextValidIdProto;
 import io.github.bjconlan.ibkr.proto.TickPriceProto;
 import io.github.bjconlan.ibkr.proto.TickSizeProto;
-import io.github.bjconlan.ibkr.transport.EventHandler;
+
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Minimal console demo: connect, stream AAPL market data, fetch one day of 5-minute bars, print
@@ -26,9 +32,11 @@ import io.github.bjconlan.ibkr.transport.EventHandler;
  * mvn -q compile exec:java -Dexec.args="127.0.0.1 4002 11"
  * }</pre>
  *
- * <p>The handler is an ordinary method reference and the callback logic is a pattern-matching
- * switch over the sealed {@link IbEvent} hierarchy, narrowing each message to its generated
- * protobuf payload.
+ * <p>The connection handler is an ordinary method reference and the callback logic is a
+ * pattern-matching switch over the sealed {@link IbEvent} hierarchy, narrowing each message to its
+ * generated protobuf payload. Requests are issued through a {@link TwsSession}, so no request id
+ * is allocated by hand and no {@code Thread.sleep} is needed: the stream is consumed by a latch 
+ * or a blocking {@code join}, and closing the scope cancels it.
  */
 public final class MarketDataDemo {
 
@@ -40,22 +48,33 @@ public final class MarketDataDemo {
         int port = Integer.parseInt(arg(args, 1, System.getenv().getOrDefault("IBKR_GATEWAY_PORT", "7497")));
         int clientId = Integer.parseInt(arg(args, 2, "1"));
 
-        TwsConfig config = TwsConfig.defaults(clientId).withHost(host).withPort(port);
-        System.out.printf("connecting to %s:%d as client %d%n", host, port, clientId);
+        TwsConfig config = TwsConfig.defaults(clientId).withHost(host).withPort(port)
+                .withMarketDataType(MarketDataType.DELAYED);   // paper accounts lack live entitlements
+        List<Integer> clientIds = List.of(clientId, clientId + 1);
+        System.out.printf("connecting to %s:%d as clients %s%n", host, port, clientIds);
 
         ContractProto.Contract aapl = ContractProto.Contract.newBuilder()
                 .setSymbol("AAPL").setSecType("STK").setExchange("SMART").setCurrency("USD").build();
 
-        EventHandler handler = MarketDataDemo::render;
-        try (TwsClient client = new TwsClient(config, handler)) {
-            client.connect();
-            client.setMarketDataType(3);   // delayed data; paper accounts usually lack live entitlements
-            client.reqMktData(1, aapl, "", false, false);
-            client.reqHistoricalData(2, aapl, "", "1 D", "5 mins", "TRADES", true, 1, false);
+        try (TwsClientFactory factory = new TwsClientFactory(config, MarketDataDemo::render, clientIds);
+             TwsSession session = factory.createSession()) {
+            // Push: the handler runs on the dispatcher; wait for ten ticks, not for a fixed time.
+            CountDownLatch ticks = new CountDownLatch(10);
+            try (AutoCloseable subscription = session.on(
+                    TwsRequest.marketData(aapl, "", false, false),
+                    message -> {
+                        renderMessage(message);
+                        ticks.countDown();
+                    })) {
+                if (!ticks.await(30, TimeUnit.SECONDS)) {
+                    System.err.println("timed out waiting for ticks");
+                }
+            }   // closing cancels the subscription and releases the market data line
 
-            // The callback runs on a virtual dispatcher thread; block here for a while.
-            Thread.sleep(30_000);
-            client.cancelMktData(1);
+            // Bounded: blocks until the terminal message, then prints every bar.
+            session.submit(TwsRequest.historicalData(aapl, "", "1 D", "5 mins", "TRADES", true, 1, false))
+                    .join()
+                    .forEach(MarketDataDemo::renderMessage);
         }
     }
 

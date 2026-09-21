@@ -57,10 +57,9 @@ class PaperOrderTest {
     void placeAndCancelRestingLimitOrder() throws Exception {
         BlockingQueue<IbEvent> events = new LinkedBlockingQueue<>();
         TwsConfig config = new TwsConfig(host(), port(), clientId(), "", Duration.ofSeconds(10), 2,
-                Duration.ofMillis(500), 100);
+                Duration.ofMillis(500), 100, null);
 
-        try (TwsClient client = new TwsClient(config, events::add)) {
-            client.connect();
+        try (TwsConnection client = TwsConnection.open(config, events::add)) {
             System.out.println("connected: server " + client.serverVersion());
             ManagedAccountsProto.ManagedAccounts accounts = await(events, ManagedAccountsProto.ManagedAccounts.class, 10);
             String account = accounts.getAccountsList().split(",")[0];
@@ -128,10 +127,9 @@ class PaperOrderTest {
     void marketableOrderBehaviourWhileAsxIsClosed() throws Exception {
         BlockingQueue<IbEvent> events = new LinkedBlockingQueue<>();
         TwsConfig config = new TwsConfig(host(), port(), clientId(), "", Duration.ofSeconds(10), 2,
-                Duration.ofMillis(500), 100);
+                Duration.ofMillis(500), 100, null);
 
-        try (TwsClient client = new TwsClient(config, events::add)) {
-            client.connect();
+        try (TwsConnection client = TwsConnection.open(config, events::add)) {
             ManagedAccountsProto.ManagedAccounts accounts = await(events, ManagedAccountsProto.ManagedAccounts.class, 10);
             String account = accounts.getAccountsList().split(",")[0];
             int orderId = await(events, NextValidIdProto.NextValidId.class, 10).getOrderId();
@@ -176,10 +174,9 @@ class PaperOrderTest {
     void fillAndFlattenOnOpenMarket() throws Exception {
         BlockingQueue<IbEvent> events = new LinkedBlockingQueue<>();
         TwsConfig config = new TwsConfig(host(), port(), clientId(), "", Duration.ofSeconds(10), 2,
-                Duration.ofMillis(500), 100);
+                Duration.ofMillis(500), 100, null);
 
-        try (TwsClient client = new TwsClient(config, events::add)) {
-            client.connect();
+        try (TwsConnection client = TwsConnection.open(config, events::add)) {
             ManagedAccountsProto.ManagedAccounts accounts = await(events, ManagedAccountsProto.ManagedAccounts.class, 10);
             String account = accounts.getAccountsList().split(",")[0];
             int orderId = await(events, NextValidIdProto.NextValidId.class, 10).getOrderId();
@@ -266,9 +263,9 @@ class PaperOrderTest {
     }
 
     /** Delayed snapshot last/close, falling back to the most recent delayed tick seen. */
-    private static double referencePrice(TwsClient client, BlockingQueue<IbEvent> events,
+    private static double referencePrice(TwsConnection client, BlockingQueue<IbEvent> events,
                                          ContractProto.Contract contract) throws InterruptedException {
-        client.setMarketDataType(3); // delayed
+        client.setMarketDataType(MarketDataType.DELAYED); // delayed
         client.reqMktData(2, contract, "", true, false);
         long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
         double price = 0;

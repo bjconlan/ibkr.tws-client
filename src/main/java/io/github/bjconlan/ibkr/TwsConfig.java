@@ -16,6 +16,8 @@ import java.time.Duration;
  * @param marketDataLines   account's maximum market data lines; drives the aggregate pacing
  *                          limit (lines / 2 requests per second) and the market data and
  *                          tick-by-tick concurrency limits. Defaults to 100
+ * @param marketDataType    market data type requested when the connection opens; {@code null}
+ *                          sends nothing, leaving the TWS/Gateway-configured type in force
  */
 public record TwsConfig(
         String host,
@@ -25,7 +27,8 @@ public record TwsConfig(
         Duration connectTimeout,
         int connectAttempts,
         Duration initialBackoff,
-        int marketDataLines) {
+        int marketDataLines,
+        MarketDataType marketDataType) {
 
     public TwsConfig {
         if (connectAttempts < 1) {
@@ -46,22 +49,23 @@ public record TwsConfig(
                 Duration.ofSeconds(10),
                 3,
                 Duration.ofMillis(500),
-                100);
+                100,
+                null);
     }
 
     public TwsConfig withHost(String host) {
         return new TwsConfig(host, port, clientId, optionalCapabilities, connectTimeout, connectAttempts,
-                initialBackoff, marketDataLines);
+                initialBackoff, marketDataLines, marketDataType);
     }
 
     public TwsConfig withPort(int port) {
         return new TwsConfig(host, port, clientId, optionalCapabilities, connectTimeout, connectAttempts,
-                initialBackoff, marketDataLines);
+                initialBackoff, marketDataLines, marketDataType);
     }
 
     public TwsConfig withClientId(int clientId) {
         return new TwsConfig(host, port, clientId, optionalCapabilities, connectTimeout, connectAttempts,
-                initialBackoff, marketDataLines);
+                initialBackoff, marketDataLines, marketDataType);
     }
 
     /**
@@ -70,6 +74,16 @@ public record TwsConfig(
      */
     public TwsConfig withMarketDataLines(int marketDataLines) {
         return new TwsConfig(host, port, clientId, optionalCapabilities, connectTimeout, connectAttempts,
-                initialBackoff, marketDataLines);
+                initialBackoff, marketDataLines, marketDataType);
+    }
+
+    /**
+     * Sets the market data type requested when the connection opens. The default is {@code null},
+     * which sends nothing and leaves the TWS/Gateway-configured type in force - the safer choice
+     * for accounts without a live entitlement.
+     */
+    public TwsConfig withMarketDataType(MarketDataType marketDataType) {
+        return new TwsConfig(host, port, clientId, optionalCapabilities, connectTimeout, connectAttempts,
+                initialBackoff, marketDataLines, marketDataType);
     }
 }

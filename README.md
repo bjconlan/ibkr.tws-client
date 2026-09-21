@@ -166,9 +166,11 @@ be sent, so the wire surface is at parity with the upstream API:
 - **Receiving** — every server message arrives as `IbEvent.Message` carrying its generated
   protobuf class. The decoder switch over `IncomingId` is exhaustive, so a new id cannot be
   added without a parser.
-- **Sending** — `client.send(OutgoingId, message)` frames and paces any request. The typed
-  methods on `TwsClient` (`reqMktData`, `reqHistoricalData`, `placeOrder`, ...) are
-  conveniences over the same path.
+- **Sending** — `session.submit(TwsRequest)` returns a future, `session.stream(TwsRequest)` a JDK
+  `Stream`, and `session.on(TwsRequest, handler)` a push subscription. `connection.send(OutgoingId,
+  message)` frames and paces any request. The typed methods on `TwsConnection` (`reqMktData`,
+  `reqHistoricalData`, `placeOrder`, ...) are conveniences over the same path; the request-id-taking
+  ones are deprecated in favour of `TwsSession`.
 
 The five upstream ids with no protobuf variant (`END_CONN`, `TICK_EFP`,
 `DELTA_NEUTRAL_VALIDATION`, `VERIFY_AND_AUTH_MESSAGE_API`, `VERIFY_AND_AUTH_COMPLETED`) exist
@@ -191,33 +193,156 @@ The demo deliberately lives under `src/test/java`, not in the published jar:
 public final class MarketDataDemo {
 
     public static void main(String[] args) throws Exception {
-        TwsConfig config = TwsConfig.defaults(1).withPort(4002);   // paper gateway
+        TwsConfig config = TwsConfig.defaults(1).withPort(4002)
+                .withMarketDataType(MarketDataType.DELAYED);   // paper gateway, no live entitlement
+        List<Integer> clientIds = List.of(1, 2);                   // the client ids this service owns
         ContractProto.Contract aapl = ContractProto.Contract.newBuilder()
                 .setSymbol("AAPL").setSecType("STK").setExchange("SMART").setCurrency("USD").build();
 
-        try (TwsClient client = new TwsClient(config, MarketDataDemo::render)) {
-            client.connect();
-            client.setMarketDataType(3);   // delayed; paper accounts usually lack live entitlements
-            client.reqMktData(1, aapl, "", false, false);
-            client.reqHistoricalData(2, aapl, "", "1 D", "5 mins", "TRADES", true, 1, false);
+        try (TwsClientFactory factory = new TwsClientFactory(config, MarketDataDemo::render, clientIds);
+             TwsSession session = factory.createSession()) {
+            // Push: wait for ten ticks, not for a fixed time.
+            CountDownLatch ticks = new CountDownLatch(10);
+            try (AutoCloseable subscription = session.on(
+                    TwsRequest.marketData(aapl, "", false, false),
+                    m -> { renderMessage(m); ticks.countDown(); })) {
+                if (!ticks.await(30, TimeUnit.SECONDS)) {
+                    System.err.println("timed out waiting for ticks");
+                }
+            }   // closing cancels the subscription and releases the market data line
 
-            Thread.sleep(30_000);   // events arrive on the dispatcher thread
-            client.cancelMktData(1);
+            // Bounded: blocks until the terminal message, then prints every bar.
+            session.submit(TwsRequest.historicalData(aapl, "", "1 D", "5 mins", "TRADES", true, 1, false))
+                    .join()
+                    .forEach(MarketDataDemo::renderMessage);
         }
     }
 
     private static void render(IbEvent event) {
         switch (event) {
-            case IbEvent.Message m when m.payload() instanceof TickPriceProto.TickPrice p ->
-                    System.out.printf("price %.4f%n", p.getPrice());
-            case IbEvent.Message m when m.payload() instanceof HistoricalDataProto.HistoricalData h ->
-                    h.getHistoricalDataBarsList().forEach(b -> System.out.printf("%s %.2f%n", b.getDate(), b.getClose()));
             case IbEvent.Error e -> System.err.printf("[%d] %d: %s%n", e.requestId(), e.code(), e.message());
             case IbEvent.Disconnected d -> System.out.println("disconnected: " + d.reason());
             default -> { }
         }
     }
+
+    private static void renderMessage(IbEvent.Message m) {
+        switch (m.payload()) {
+            case TickPriceProto.TickPrice p -> System.out.printf("price %.4f%n", p.getPrice());
+            case HistoricalDataProto.HistoricalData h ->
+                    h.getHistoricalDataBarsList().forEach(b -> System.out.printf("%s %.2f%n", b.getDate(), b.getClose()));
+            default -> { }
+        }
+    }
 }
+```
+
+### Sessions
+
+Request handling is scoped through a `TwsSession`, created with `connection.createSession()` for
+a single connection or `factory.createSession()` for a pool. The
+connection allocates request ids, applies pacing and routes responses; the session chooses how
+they are consumed and cancels everything it opened when closed:
+
+- `submit(TwsRequest)` - bounded; a `CompletableFuture` of the correlated responses.
+- `stream(TwsRequest)` - pull; a JDK `Stream` that ends on the terminal message, and cancels when closed.
+- `on(TwsRequest, handler)` - push; the handler runs on the dispatcher until the handle is closed.
+
+No `Thread.sleep` is needed. Bounded work blocks on `submit(...).join()`; streaming waits on a
+latch or on the next `stream` element, or just holds the subscription for the scope's lifetime. In
+Spring the `TwsSession` (or the `TwsConnection`) is a bean whose `close()`/`@PreDestroy` cancels
+the requests.
+
+### Pooling and Spring
+
+`TwsClientFactory` owns a pool of connections, one per client id you reserve for the service, and
+hands out `TwsSession`s. Each connection gets its own *rate* budget (IBKR's aggregate request rate
+is per connection), while the pool shares one `SubscriptionBudget` so the market data line and
+tick-by-tick caps stay account-wide. Sessions do not lease a connection: each request is placed on
+a live connection round-robin, and closing a session cancels only its own requests. Connections
+are dialled lazily - nothing opens until a request needs it, and each reserved client id is
+dialled the first time the round-robin selects it. The two-argument constructor defaults the
+reserved ids to `IntStream.range(1, 32)` (1-31); pass an explicit list to avoid ids used by other
+API clients.
+
+```java
+TwsClientFactory factory = new TwsClientFactory(
+        TwsConfig.defaults(0).withPort(4002)
+                .withMarketDataType(MarketDataType.DELAYED),   // connection setting; omit to use TWS's own
+        event -> log.info("ibkr: {}", event),
+        List.of(1, 2, 3, 4));      // the client ids this service owns; omit any used elsewhere
+
+try (TwsSession session = factory.createSession()) {
+    ...
+}   // cancels this session's requests
+
+factory.close();                  // closes every dialled connection
+```
+
+In Spring the factory is a bean whose lifecycle spans the application, and subscriptions live in
+long-lived components. No `Thread.sleep`, no request ids, no connection bookkeeping. Bind the
+connection settings from configuration, expose the factory as a singleton whose `close()` runs on
+shutdown, and let each long-lived component own a session:
+
+```java
+@ConfigurationProperties("ibkr")
+record IbkrProperties(String host, int port, List<Integer> clientIds, MarketDataType marketDataType) {
+
+    TwsConfig config() {
+        TwsConfig base = TwsConfig.defaults(0)        // the client id is set per pooled connection
+                .withHost(host)
+                .withPort(port);
+        return marketDataType == null ? base : base.withMarketDataType(marketDataType);
+    }
+}
+
+@Configuration
+@EnableConfigurationProperties(IbkrProperties.class)
+class IbkrConfiguration {
+
+    /** One factory for the application; destroyMethod closes every dialled connection on shutdown. */
+    @Bean(destroyMethod = "close")
+    TwsClientFactory twsClientFactory(IbkrProperties properties) {
+        return new TwsClientFactory(
+                properties.config(),
+                event -> log.info("ibkr: {}", event),   // connection-level lifecycle and errors
+                properties.clientIds());                // the client ids this service owns
+    }
+}
+
+@Component
+class MarketDataFeed implements AutoCloseable {
+
+    private static final ContractProto.Contract AAPL = ContractProto.Contract.newBuilder()
+            .setSymbol("AAPL").setSecType("STK").setExchange("SMART").setCurrency("USD").build();
+
+    private final TwsSession session;
+    private final AutoCloseable subscription;
+
+    MarketDataFeed(TwsClientFactory factory) {
+        this.session = factory.createSession();                       // one scope for the bean's lifetime
+        this.subscription = session.on(TwsRequest.marketData(AAPL, ""), this::persist);
+    }
+
+    private void persist(IbEvent.Message message) {
+        // runs on the connection's dispatcher thread; keep it short or hand off to a queue
+    }
+
+    @PreDestroy
+    @Override
+    public void close() throws Exception {
+        subscription.close();
+        session.close();
+    }
+}
+```
+
+```yaml
+ibkr:
+  host: 127.0.0.1
+  port: 4002
+  client-ids: [1, 2, 3, 4]
+  market-data-type: DELAYED    # omit to leave the TWS/Gateway-configured type in force
 ```
 
 ### Using it as a library
@@ -232,17 +357,21 @@ mvn install
 <dependency>
     <groupId>io.github.bjconlan.ibkr</groupId>
     <artifactId>tws-client</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>1.0.0-SNAPSHOT</version>
 </dependency>
 ```
 
 Request methods are synchronous and may block on the pacer, so issue independent requests from
-virtual threads:
+virtual threads, each with its own future:
 
 ```java
 try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-    executor.submit(() -> client.reqHistoricalData(1, aapl, "", "1 D", "5 mins", "TRADES", true, 1, false));
-    executor.submit(() -> client.reqHistoricalData(2, aapl, "", "1 W", "1 hour", "TRADES", true, 1, false));
+    var a = executor.submit(() -> session.submit(
+            TwsRequest.historicalData(aapl, "", "1 D", "5 mins", "TRADES", true, 1, false)).join());
+    var b = executor.submit(() -> session.submit(
+            TwsRequest.historicalData(aapl, "", "1 W", "1 hour", "TRADES", true, 1, false)).join());
+    var both = CompletableFuture.allOf(a, b).thenRun(() -> { });
+    both.join();
 }
 ```
 
@@ -250,11 +379,14 @@ try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
 
 ```
 io.github.bjconlan.ibkr
-├── TwsClient          facade; request methods, request-id allocation, lease bookkeeping
+├── TwsClientFactory   pool of connections over a reserved client-id list
+├── TwsConnection      one client id + socket; connect/disconnect, request-id allocation, routing
+├── TwsSession         request scope; submit / stream / on
+├── TwsRequest         request descriptors (contractDetails, historicalData, marketData, executions)
 ├── TwsConfig          connection and retry settings
 ├── event/IbEvent      sealed hierarchy: lifecycle records + Message(id, protobuf payload)
 ├── protocol/          framing (Wire), request encoding, message decoding, id maps
-├── pacing/            PacingRule(s), PacingKeys, Pacer
+├── pacing/            PacingRule(s), PacingKeys, Pacer, SubscriptionBudget
 └── transport/         socket + virtual-thread reader/writer/dispatcher
 ```
 
@@ -334,7 +466,7 @@ Pacer pacer = new Pacer(
                 List.of(new PacingRule.Concurrency("ib.marketdata.lines", 50))),
         Duration.ofSeconds(30));
 
-TwsClient client = new TwsClient(config, handler, pacer);
+TwsConnection connection = TwsConnection.open(config, handler, pacer);
 ```
 
 Rules are keyed by `OutgoingId`, so any request can carry its own policy. `PacingRule` is a
@@ -342,7 +474,7 @@ sealed interface with three shapes: `Rate`, `KeyedRate` (with a `REQUEST` or
 `CONTRACT_EXCHANGE_TICK_TYPE` scope) and `Concurrency`.
 
 `resilience4j` backs the rate limiters (`RateLimiter`), concurrency limits (`Bulkhead`) and
-connection retries (`Retry`). It is isolated to `pacing/` and `TwsClient.connect()`, so a
+connection retries (`Retry`). It is isolated to `pacing/` and `TwsConnection.open()`, so a
 different implementation can be substituted without touching the protocol code.
 
 One documented rule is not modelled: **BID_ASK historical requests count twice**. If you use
@@ -365,7 +497,7 @@ One documented rule is not modelled: **BID_ASK historical requests count twice**
   minimum of 100 lines. BID_ASK double-counting is documented but not modelled, and the keyed
   historical rules (identical request, same contract) apply on the typed `reqHistoricalData` —
   the raw `send(OutgoingId, MessageLite)` path supplies no keys and so skips them.
-- **Partial typed surface.** `TwsClient` has typed conveniences for the common requests (~17 of
+- **Partial typed surface.** `TwsConnection` has typed conveniences for the common requests (~17 of
   the 83 outbound ids); everything else goes through `send(OutgoingId, MessageLite)` with the
   generated protobuf message.
 
