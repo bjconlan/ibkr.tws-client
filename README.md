@@ -357,7 +357,7 @@ mvn install
 <dependency>
     <groupId>io.github.bjconlan.ibkr</groupId>
     <artifactId>tws-client</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.1-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -479,6 +479,36 @@ different implementation can be substituted without touching the protocol code.
 
 One documented rule is not modelled: **BID_ASK historical requests count twice**. If you use
 `whatToShow = "BID_ASK"`, budget for half the headline historical rate yourself.
+
+## Observability
+
+The library logs through `java.lang.System.Logger`, so it adds no logging dependency and never
+configures a backend. With SLF4J 2, add the bridge to route these records into your existing
+backend (Logback, Log4j, and so on):
+
+```xml
+<dependency>
+    <groupId>org.slf4j</groupId>
+    <artifactId>slf4j-jdk-platform-logging</artifactId>
+</dependency>
+```
+
+Without it, records go to the platform default (JUL).
+
+Levels:
+
+| Level | What is logged |
+|-------|----------------|
+| `TRACE` | per-frame sends, and per-request submit / terminal / cancel |
+| `DEBUG` | connection open and close, disconnects, pool dials, request failures, TWS errors, pacing violations |
+| `WARNING` | a pooled connection could not be dialled |
+| `ERROR` | an event handler threw (logged by the transport so a bad handler cannot kill the dispatcher) |
+
+Diagnostics are deliberately minimal: server data (quotes, fills, errors, lifecycle) stays on the
+`EventHandler` and the `TwsSession` responses rather than being echoed as log lines. For metrics and
+distributed tracing, instrument at your own boundary - an `@Aspect` or decorator around the calls
+that use `TwsSession`, or a connection-level `EventHandler` - rather than expecting the library to
+emit spans.
 
 ## Trade-offs and limitations
 

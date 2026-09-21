@@ -43,6 +43,8 @@ import java.util.stream.StreamSupport;
  */
 public final class TwsSession implements AutoCloseable {
 
+    private static final System.Logger LOG = System.getLogger(TwsSession.class.getName());
+
     private final Supplier<TwsConnection> connections;
     private final Set<RequestHandle> handles = ConcurrentHashMap.newKeySet();
 
@@ -176,6 +178,10 @@ public final class TwsSession implements AutoCloseable {
     /** Cancels every request opened through this session. The connection stays open. */
     @Override
     public void close() {
+        if (!handles.isEmpty()) {
+            LOG.log(System.Logger.Level.DEBUG,
+                    "closing session with %d open request(s)".formatted(handles.size()));
+        }
         for (RequestHandle handle : handles) {
             handle.close();
         }
@@ -192,6 +198,7 @@ public final class TwsSession implements AutoCloseable {
             handles.remove(handle);
             throw e;
         }
+        LOG.log(System.Logger.Level.TRACE, "submitted %s as request %d".formatted(request.id(), handle.reqId()));
         return handle;
     }
 

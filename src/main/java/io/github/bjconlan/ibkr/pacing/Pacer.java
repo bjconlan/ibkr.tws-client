@@ -27,6 +27,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class Pacer {
 
+    private static final System.Logger LOG = System.getLogger(Pacer.class.getName());
+
     /** How long a caller will wait for a rate permit before giving up. */
     public static final Duration DEFAULT_ACQUIRE_TIMEOUT = Duration.ofSeconds(30);
 
@@ -114,6 +116,8 @@ public final class Pacer {
                                 .maxConcurrentCalls(concurrency.permits())
                                 .build()));
                 if (!bulkhead.tryAcquirePermission()) {
+                    LOG.log(System.Logger.Level.DEBUG, "pacing violation: %s limit reached (%d) for %s"
+                            .formatted(concurrency.name(), concurrency.permits(), id));
                     throw new PacingViolationException(concurrency.name(), id,
                             "%s limit reached (%d)".formatted(concurrency.name(), concurrency.permits()));
                 }
@@ -147,6 +151,8 @@ public final class Pacer {
 
     private void acquire(RateLimiter limiter, String name, OutgoingId id) {
         if (!limiter.acquirePermission()) {
+            LOG.log(System.Logger.Level.DEBUG, "pacing violation: waited %s for a permit from %s (%s)"
+                    .formatted(acquireTimeout, name, id));
             throw new PacingViolationException(name, id,
                     "waited %s for a permit from %s".formatted(acquireTimeout, name));
         }

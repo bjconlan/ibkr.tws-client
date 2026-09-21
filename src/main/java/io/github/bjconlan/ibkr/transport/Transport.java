@@ -31,6 +31,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class Transport implements AutoCloseable {
 
+    private static final System.Logger LOG = System.getLogger(Transport.class.getName());
+
     private static final int MAX_MESSAGE_LENGTH = 0xffffff;
 
     private final Socket socket;
@@ -231,8 +233,7 @@ public final class Transport implements AutoCloseable {
             handler.onEvent(event);
         } catch (RuntimeException e) {
             // A misbehaving handler must not take down the dispatcher.
-            System.getLogger(Transport.class.getName())
-                    .log(System.Logger.Level.ERROR, "event handler failed for " + event, e);
+            LOG.log(System.Logger.Level.ERROR, "event handler failed for " + event, e);
         }
     }
 

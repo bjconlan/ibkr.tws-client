@@ -15,6 +15,8 @@ import java.util.function.Consumer;
  */
 final class RequestHandle implements AutoCloseable {
 
+    private static final System.Logger LOG = System.getLogger(RequestHandle.class.getName());
+
     private final TwsConnection connection;
     private final int reqId;
     private final TwsRequest request;
@@ -57,6 +59,7 @@ final class RequestHandle implements AutoCloseable {
             release();
             sink.terminal();
             onDone.accept(this);
+            LOG.log(System.Logger.Level.TRACE, "request %d (%s) terminal".formatted(reqId, request.id()));
         }
     }
 
@@ -67,6 +70,8 @@ final class RequestHandle implements AutoCloseable {
             release();
             sink.error(cause);
             onDone.accept(this);
+            LOG.log(System.Logger.Level.DEBUG,
+                    "request %d (%s) failed".formatted(reqId, request.id()), cause);
         }
     }
 
@@ -79,6 +84,7 @@ final class RequestHandle implements AutoCloseable {
             release();
             sink.cancelled();
             onDone.accept(this);
+            LOG.log(System.Logger.Level.TRACE, "request %d (%s) cancelled".formatted(reqId, request.id()));
         }
     }
 

@@ -35,6 +35,8 @@ import java.util.stream.IntStream;
  */
 public final class TwsClientFactory implements AutoCloseable {
 
+    private static final System.Logger LOG = System.getLogger(TwsClientFactory.class.getName());
+
     private final TwsConfig template;
     private final EventHandler handler;
     private final List<Integer> clientIds;
@@ -112,6 +114,7 @@ public final class TwsClientFactory implements AutoCloseable {
         synchronized (lock) {
             existing = connections.get(clientId);
             if (existing == null) {
+                LOG.log(System.Logger.Level.DEBUG, "dialling client id %d".formatted(clientId));
                 existing = connect(clientId);
                 connections.put(clientId, existing);
             }
@@ -125,6 +128,7 @@ public final class TwsClientFactory implements AutoCloseable {
                     template.withClientId(clientId), handler,
                     Pacer.of(template.marketDataLines(), budget));
         } catch (IOException e) {
+            LOG.log(System.Logger.Level.WARNING, "could not connect client id %d".formatted(clientId), e);
             throw new UncheckedIOException("could not connect client id " + clientId, e);
         }
     }
@@ -132,6 +136,9 @@ public final class TwsClientFactory implements AutoCloseable {
     @Override
     public void close() {
         closed = true;
+        if (!connections.isEmpty()) {
+            LOG.log(System.Logger.Level.DEBUG, "closing %d pooled connection(s)".formatted(connections.size()));
+        }
         connections.values().forEach(TwsConnection::close);
         connections.clear();
     }

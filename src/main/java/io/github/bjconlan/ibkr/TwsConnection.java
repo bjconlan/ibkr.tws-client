@@ -63,6 +63,8 @@ import java.util.function.Consumer;
  */
 public final class TwsConnection implements AutoCloseable {
 
+    private static final System.Logger LOG = System.getLogger(TwsConnection.class.getName());
+
     private final TwsConfig config;
     private final EventHandler handler;
     private final Pacer pacer;
@@ -96,8 +98,12 @@ public final class TwsConnection implements AutoCloseable {
         TwsConnection connection = new TwsConnection(config, handler, pacer);
         try {
             connection.connect();
+            LOG.log(System.Logger.Level.DEBUG, "opened %s:%d as client %d (server %d)".formatted(
+                    config.host(), config.port(), config.clientId(), connection.serverVersion()));
             return connection;
         } catch (IOException | RuntimeException e) {
+            LOG.log(System.Logger.Level.DEBUG, "failed to open %s:%d as client %d".formatted(
+                    config.host(), config.port(), config.clientId()), e);
             connection.close();
             throw e;
         }
@@ -165,6 +171,8 @@ public final class TwsConnection implements AutoCloseable {
         Transport t = transport;
         transport = null;
         if (t != null) {
+            LOG.log(System.Logger.Level.DEBUG, "closing %s:%d as client %d".formatted(
+                    config.host(), config.port(), config.clientId()));
             t.close();
         }
         releaseAllMarketData();
@@ -346,6 +354,7 @@ public final class TwsConnection implements AutoCloseable {
             throw new IllegalStateException("not connected");
         }
         pacer.acquire(id, keys);
+        LOG.log(System.Logger.Level.TRACE, "send %s (client %d)".formatted(id, config.clientId()));
         t.send(Encoder.encode(id, body));
     }
 
@@ -419,10 +428,14 @@ public final class TwsConnection implements AutoCloseable {
                 }
             }
             case IbEvent.Disconnected d -> {
+                LOG.log(System.Logger.Level.DEBUG, "client %d disconnected: %s"
+                        .formatted(config.clientId(), d.reason()));
                 failAllPending(d.cause() == null ? new IllegalStateException(d.reason()) : d.cause());
                 releaseAllMarketData();
             }
             case IbEvent.Error e -> {
+                LOG.log(System.Logger.Level.DEBUG, "error %d for request %d: %s"
+                        .formatted(e.code(), e.requestId(), e.message()));
                 RequestHandle handle = pending.get(e.requestId());
                 if (handle != null) {
                     handle.fail(new IbRequestException(e));
