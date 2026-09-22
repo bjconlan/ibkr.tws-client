@@ -145,7 +145,7 @@ class TwsSessionTest {
     // ------------------------------------------------------------------ helpers
 
     private static TwsConnection connect(ServerSocket server) throws Exception {
-        return TwsConnection.open(TwsConfig.defaults(7).withPort(server.getLocalPort()), ignored -> { });
+        return TwsConnection.open(new TwsConfig().withClientId(7).withPort(server.getLocalPort()), ignored -> { });
     }
 
     private static void awaitNonEmpty(List<IbEvent.Message> received) throws InterruptedException {

@@ -39,12 +39,15 @@ public record TwsConfig(
         }
     }
 
-    /** Sensible defaults for a local paper-trading TWS. */
-    public static TwsConfig defaults(int clientId) {
-        return new TwsConfig(
+    /**
+     * Sensible defaults for a local paper-trading TWS. The client id defaults to {@code 1}, since
+     * {@code 0} is commonly the Trader Workstation session's own id.
+     */
+    public TwsConfig() {
+        this(
                 "127.0.0.1",
                 7497,
-                clientId,
+                1,
                 "",
                 Duration.ofSeconds(10),
                 3,

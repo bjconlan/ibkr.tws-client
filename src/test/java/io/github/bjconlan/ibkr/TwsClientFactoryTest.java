@@ -58,7 +58,7 @@ class TwsClientFactoryTest {
                     () -> serve(server, connectedIds, servedBy, disconnected));
 
             TwsClientFactory factory = new TwsClientFactory(
-                    TwsConfig.defaults(0).withPort(server.getLocalPort()),
+                    new TwsConfig().withPort(server.getLocalPort()),
                     ignored -> { }, List.of(1, 2, 3));
 
             try (TwsSession session = factory.createSession()) {
@@ -108,7 +108,7 @@ class TwsClientFactoryTest {
 
     @Test
     void createSessionAfterCloseFails() {
-        TwsClientFactory factory = new TwsClientFactory(TwsConfig.defaults(0), ignored -> { }, List.of(1));
+        TwsClientFactory factory = new TwsClientFactory(new TwsConfig(), ignored -> { }, List.of(1));
         factory.close();
         assertThrows(IllegalStateException.class, factory::createSession);
     }
@@ -116,12 +116,12 @@ class TwsClientFactoryTest {
     @Test
     void emptyClientIdsRejected() {
         assertThrows(IllegalArgumentException.class,
-                () -> new TwsClientFactory(TwsConfig.defaults(0), ignored -> { }, List.of()));
+                () -> new TwsClientFactory(new TwsConfig(), ignored -> { }, List.of()));
     }
 
     @Test
     void defaultsToClientIdsOneToThirtyOne() {
-        TwsClientFactory factory = new TwsClientFactory(TwsConfig.defaults(0), ignored -> { });
+        TwsClientFactory factory = new TwsClientFactory(new TwsConfig(), ignored -> { });
         assertEquals(IntStream.range(1, 32).boxed().toList(), factory.clientIds());
         assertEquals(1, factory.clientIds().get(0));
         assertEquals(31, factory.clientIds().get(30));
@@ -129,7 +129,7 @@ class TwsClientFactoryTest {
 
     @Test
     void closeWithoutUseIsSafe() {
-        TwsClientFactory factory = new TwsClientFactory(TwsConfig.defaults(0), ignored -> { }, List.of(1));
+        TwsClientFactory factory = new TwsClientFactory(new TwsConfig(), ignored -> { }, List.of(1));
         factory.close();
         factory.close();
     }

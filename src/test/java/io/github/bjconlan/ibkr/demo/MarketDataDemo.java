@@ -48,7 +48,7 @@ public final class MarketDataDemo {
         int port = Integer.parseInt(arg(args, 1, System.getenv().getOrDefault("IBKR_GATEWAY_PORT", "7497")));
         int clientId = Integer.parseInt(arg(args, 2, "1"));
 
-        TwsConfig config = TwsConfig.defaults(clientId).withHost(host).withPort(port)
+        TwsConfig config = new TwsConfig().withHost(host).withPort(port)
                 .withMarketDataType(MarketDataType.DELAYED);   // paper accounts lack live entitlements
         List<Integer> clientIds = List.of(clientId, clientId + 1);
         System.out.printf("connecting to %s:%d as clients %s%n", host, port, clientIds);

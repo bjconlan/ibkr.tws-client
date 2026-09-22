@@ -50,7 +50,7 @@ class FakeServerIntegrationTest {
         try (ServerSocket server = new ServerSocket(0)) {
             Thread serverThread = Thread.ofVirtual().start(() -> serve(server, receivedRequests));
 
-            TwsConfig config = TwsConfig.defaults(7).withPort(server.getLocalPort());
+            TwsConfig config = new TwsConfig().withClientId(7).withPort(server.getLocalPort());
             try (TwsConnection client = TwsConnection.open(config, events::add)) {
                 assertEquals(SERVER_VERSION, client.serverVersion());
                 assertTrue(client.isConnected());
@@ -82,7 +82,7 @@ class FakeServerIntegrationTest {
         try (ServerSocket server = new ServerSocket(0)) {
             Thread serverThread = Thread.ofVirtual().start(() -> serve(server, new LinkedBlockingQueue<>()));
 
-            TwsConfig config = TwsConfig.defaults(8).withPort(server.getLocalPort());
+            TwsConfig config = new TwsConfig().withClientId(8).withPort(server.getLocalPort());
             try (TwsConnection connection = TwsConnection.open(config, ignored -> { })) {
                 TwsSession session = connection.createSession();
                 List<IbEvent.Message> messages = session

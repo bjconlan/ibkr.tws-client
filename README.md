@@ -193,7 +193,7 @@ The demo deliberately lives under `src/test/java`, not in the published jar:
 public final class MarketDataDemo {
 
     public static void main(String[] args) throws Exception {
-        TwsConfig config = TwsConfig.defaults(1).withPort(4002)
+        TwsConfig config = new TwsConfig().withPort(4002)
                 .withMarketDataType(MarketDataType.DELAYED);   // paper gateway, no live entitlement
         List<Integer> clientIds = List.of(1, 2);                   // the client ids this service owns
         ContractProto.Contract aapl = ContractProto.Contract.newBuilder()
@@ -267,7 +267,7 @@ API clients.
 
 ```java
 TwsClientFactory factory = new TwsClientFactory(
-        TwsConfig.defaults(0).withPort(4002)
+        new TwsConfig().withPort(4002)
                 .withMarketDataType(MarketDataType.DELAYED),   // connection setting; omit to use TWS's own
         event -> log.info("ibkr: {}", event),
         List.of(1, 2, 3, 4));      // the client ids this service owns; omit any used elsewhere
@@ -289,7 +289,7 @@ shutdown, and let each long-lived component own a session:
 record IbkrProperties(String host, int port, List<Integer> clientIds, MarketDataType marketDataType) {
 
     TwsConfig config() {
-        TwsConfig base = TwsConfig.defaults(0)        // the client id is set per pooled connection
+        TwsConfig base = new TwsConfig()        // the client id is set per pooled connection
                 .withHost(host)
                 .withPort(port);
         return marketDataType == null ? base : base.withMarketDataType(marketDataType);
@@ -357,7 +357,7 @@ mvn install
 <dependency>
     <groupId>io.github.bjconlan.ibkr</groupId>
     <artifactId>tws-client</artifactId>
-    <version>1.0.1-SNAPSHOT</version>
+    <version>1.0.2-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -423,7 +423,7 @@ a subscription counts — streaming responses do not. The client derives this li
 `TwsConfig.marketDataLines()` (default `100`):
 
 ```java
-TwsConfig config = TwsConfig.defaults(1).withMarketDataLines(200);  // 100 requests/second
+TwsConfig config = new TwsConfig().withMarketDataLines(200);  // 100 requests/second
 ```
 
 ### Documented per-request constraints
